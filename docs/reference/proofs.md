@@ -58,6 +58,10 @@ ssz_get_generalized_index(type, path, gindex) -> status
 - Keeps a pointer after it returns.
 - Makes an OS call.
 
+### Limits
+
+- Stack: 80 bytes on x86-64, return address included, 0 bytes on ARM64 and 96 bytes on RISC-V.
+
 ### ABI
 
 - Symbol: `ssz_get_generalized_index` (`_ssz_get_generalized_index` on macOS).
@@ -89,7 +93,7 @@ ssz_build_proof(type, value, gindex, scratch, branch) -> status
 ### Returns
 
 - `SSZ_OK`: `branch` holds the branch.
-- A proof refusal constant from [include/ssz.inc](../../include/ssz.inc): the value's tree does not reach `gindex`. It names the first fault that v0.1.0 raises. This is checked before any capacity.
+- A proof refusal constant from [include/ssz.inc](../../include/ssz.inc): the value's tree does not reach `gindex`. It names the first fault that v0.1.0 raises.
 - `SSZ_BUFFER_TOO_SMALL`: `branch` or `scratch` is too small. `branch` is then invalid.
 
 ### Caller must
@@ -102,6 +106,7 @@ ssz_build_proof(type, value, gindex, scratch, branch) -> status
 
 ### Function does
 
+- Checks for index 0, then `scratch`, then the path, then `branch`.
 - Builds the branch as v0.1.0 `build_proof` builds it.
 - Writes the sibling of each node on the path, from the node up to the root.
 - Reads each sibling with v0.1.0 `node_root`.
@@ -120,6 +125,7 @@ ssz_build_proof(type, value, gindex, scratch, branch) -> status
 
 - `branch`: 24 + 32 × floor(log2(index)) bytes.
 - `scratch`: the `scratch` bytes of the root `TypeNode`.
+- Stack: at most 4240 bytes on x86-64, 4880 on ARM64 and 4944 on RISC-V, `crypto_sha256` included.
 
 ### ABI
 

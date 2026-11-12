@@ -6,6 +6,8 @@
 - Function [`ssz_serialize_size`](#function-ssz_serialize_size): gives the buffer size that `ssz_serialize` needs.
 - Function [`ssz_deserialize`](#function-ssz_deserialize): reads an SSZ encoding into a value.
 - Function [`ssz_deserialize_size`](#function-ssz_deserialize_size): gives the buffer size that `ssz_deserialize` needs.
+- Function [`ssz_l0_ser`](#function-ssz_l0_ser): appends the encoding of one value. Internal.
+- Function [`ssz_l0_de`](#function-ssz_l0_de): decodes one value. Internal.
 - Type [`Value`](#type-value): an SSZ value in memory.
 - Type [`PartRef`](#type-partref): where the entries of a variable size field are.
 - Type [`TypeDescriptor`](#type-typedescriptor): describes one SSZ type.
@@ -13,6 +15,9 @@
 - Type [`TypeField`](#type-typefield): one container field inside a descriptor.
 - Type [`ByteList`](#type-bytelist): a byte string with a header.
 - Type [`Scratch`](#type-scratch): workspace for one call.
+- Type [`Ctx`](#type-ctx): what every internal function reads. Internal.
+- Type [`Slot`](#type-slot): where one value is. Internal.
+- Type [`Cursor`](#type-cursor): where the next byte goes or comes from. Internal.
 
 ## Spec
 
@@ -66,6 +71,7 @@ ssz_serialize(type, value, scratch, serialized) -> status
 
 - `serialized`: the size that `ssz_serialize_size` gives.
 - `scratch`: the `scratch` bytes of the root `TypeNode`.
+- Stack: at most 1840 bytes on x86-64, 1872 on ARM64 and 1872 on RISC-V.
 
 ### ABI
 
@@ -117,6 +123,7 @@ ssz_serialize_size(type, value, scratch, size) -> status
 ### Limits
 
 - `scratch`: the `scratch` bytes of the root `TypeNode`.
+- Stack: at most 1840 bytes on x86-64, 1872 on ARM64 and 1872 on RISC-V.
 
 ### ABI
 
@@ -146,8 +153,8 @@ ssz_deserialize(type, serialized, scratch, value) -> status
 ### Returns
 
 - `SSZ_OK`: the encoding is valid and `value` holds it.
-- A decode refusal constant from [include/ssz.inc](../../include/ssz.inc): the encoding breaks a v0.1.0 rule. It names the first fault that v0.1.0 raises. This is checked before any capacity.
-- `SSZ_BUFFER_TOO_SMALL`: the encoding is valid, but `value` or `scratch` is too small.
+- A decode refusal constant from [include/ssz.inc](../../include/ssz.inc): the encoding breaks a v0.1.0 rule. It names the first fault that v0.1.0 raises.
+- `SSZ_BUFFER_TOO_SMALL`: `scratch` is too small, or the encoding is valid but `value` is too small.
 - After any status other than `SSZ_OK`, `value` is invalid.
 
 ### Caller must
@@ -161,6 +168,7 @@ ssz_deserialize(type, serialized, scratch, value) -> status
 
 ### Function does
 
+- Checks `scratch`, then the encoding, then `value`.
 - Accepts exactly the encodings that v0.1.0 `decode_bytes` accepts.
 - Checks each byte of the encoding before it uses it.
 - Puts the parts after the fixed fields, in field order.
@@ -180,6 +188,7 @@ ssz_deserialize(type, serialized, scratch, value) -> status
 
 - `value`: the size that `ssz_deserialize_size` gives.
 - `scratch`: the `scratch` bytes of the root `TypeNode`.
+- Stack: at most 4000 bytes on x86-64, 4384 on ARM64 and 4384 on RISC-V.
 
 ### ABI
 
@@ -221,6 +230,7 @@ ssz_deserialize_size(type, serialized, scratch, size) -> status
 
 ### Function does
 
+- Checks `scratch`, then the encoding.
 - Writes the exact size of the value that `ssz_deserialize` builds to `size`.
 
 ### Function never
@@ -233,12 +243,123 @@ ssz_deserialize_size(type, serialized, scratch, size) -> status
 ### Limits
 
 - `scratch`: the `scratch` bytes of the root `TypeNode`.
+- Stack: at most 4000 bytes on x86-64, 4384 on ARM64 and 4384 on RISC-V.
 
 ### ABI
 
 - Symbol: `ssz_deserialize_size` (`_ssz_deserialize_size` on macOS).
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `type`, `serialized`, `scratch`, `size`.
+
+## Function `ssz_l0_ser`
+
+Appends the SSZ encoding of one value at a cursor. Internal: the serialize functions call it.
+
+### Signature
+
+```
+ssz_l0_ser(ctx, node, slot, cursor) -> status
+```
+
+### Arguments
+
+| Name | Role | Type |
+|---|---|---|
+| `ctx` | input | `Ctx` |
+| `node` | input | `TypeNode` |
+| `slot` | input | `Slot` |
+| `cursor` | state | `Cursor` |
+
+### Returns
+
+- `SSZ_OK`: always.
+
+### Caller must
+
+- Pass a `Ctx` that an L2 function filled from a valid `TypeDescriptor`.
+- Pass a `TypeNode` of that descriptor in `node`.
+- Pass a valid `Value` of that type in `slot`.
+- When `ctx.write` is 1, give `cursor.out` room for the whole encoding.
+
+### Function does
+
+- Adds the length of the encoding to `cursor.out`.
+- Writes the encoding at `cursor.out` only when `ctx.write` is 1.
+
+### Function never
+
+- Writes outside the encoding, `cursor` and its own stack.
+- Keeps a pointer after it returns.
+- Makes an OS call.
+
+### Limits
+
+- Stack of its own frame: 144 bytes on every ISA. On x86-64 this includes the return address.
+- Recursion depth: at most one call for each level of nested types.
+
+### ABI
+
+- Symbol: `ssz_l0_ser`, local to the library.
+- Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
+- Argument order: `ctx`, `node`, `slot`, `cursor`.
+
+## Function `ssz_l0_de`
+
+Decodes one value from the encoding at a cursor. Internal: the deserialize functions call it.
+
+### Signature
+
+```
+ssz_l0_de(ctx, node, slot, cursor) -> status
+```
+
+### Arguments
+
+| Name | Role | Type |
+|---|---|---|
+| `ctx` | input | `Ctx` |
+| `node` | input | `TypeNode` |
+| `slot` | input | `Slot` |
+| `cursor` | state | `Cursor` |
+
+### Returns
+
+- `SSZ_OK`: the `slot.scope` bytes at `cursor.pos` are a valid encoding of the type.
+- A decode refusal constant from [include/ssz.inc](../../include/ssz.inc): the first fault that v0.1.0 `deserialize` raises for those bytes. `cursor` is then as it was.
+
+### Caller must
+
+- Pass a `Ctx` that an L2 function filled from a valid `TypeDescriptor`.
+- Pass a `TypeNode` of that descriptor in `node`.
+- Set `ctx.end` to the end of the whole encoding.
+- When `ctx.write` is 1, give the value room at `cursor.next` for every part it adds.
+
+### Function does
+
+- Checks the bytes as v0.1.0 `deserialize` checks a stream with a scope of `slot.scope` bytes.
+- Checks every read against `ctx.end`.
+- Moves `cursor.pos` past the bytes it reads.
+- Moves `cursor.next` past each part it adds, rounded up to a multiple of 8.
+- Writes the value only when `ctx.write` is 1.
+- Writes the size of a nested value at its start.
+
+### Function never
+
+- Reads encoding bytes at or after `ctx.end`.
+- Writes outside the value, `cursor` and its own stack.
+- Keeps a pointer after it returns.
+- Makes an OS call.
+
+### Limits
+
+- Stack of its own frame: 176 bytes on x86-64, return address included, and 192 bytes on ARM64 and RISC-V.
+- Recursion depth: at most two calls for each level of nested types.
+
+### ABI
+
+- Symbol: `ssz_l0_de`, local to the library.
+- Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
+- Argument order: `ctx`, `node`, `slot`, `cursor`.
 
 ## Type `Value`
 
@@ -276,7 +397,8 @@ An SSZ value in memory, laid out as ARCHITECTURE.md section 6 requires.
 - A list value, or a vector value of variable size, holds its `PartRef` at byte 8.
 - The parts start at `value_fixed`, in field order.
 - Each part ends where the next part starts, or at the end of the value.
-- Each nested value in a part starts at a multiple of 8. Its size gives the start of the next one.
+- Each nested value in a part starts at a multiple of 8.
+- The size of a nested value is a multiple of 8. It gives the start of the next one.
 - Valid when these rules hold, each count is within the limit of its type, each `Boolean` is 0 or 1, and each padding bit is 0.
 
 ## Type `PartRef`
@@ -317,6 +439,7 @@ Describes one SSZ type and every type inside it.
 - Both start at multiples of 8.
 - Every index is in range.
 - A type has a lower node index than every type inside it.
+- A type has at most 12 levels of nested types, itself included. A basic type has 1.
 
 ## Type `TypeNode`
 
@@ -385,11 +508,76 @@ Workspace for one call.
 | Offset | Field | Type | Meaning |
 |---|---|---|---|
 | 0 | `size` | u64 | Total buffer size in bytes, this field included |
+| 8 | `sha` | `ByteList`, 88 bytes | The 64 byte input of one SHA-256 |
+| 96 | `ctx` | `Ctx` | Filled by each L2 function |
+| 160 | `level` | `Level` | The leaves of the root type |
+| 256 | `work` | `Work` | The work area of the root level |
 
 ### Rules
 
 - The buffer starts at a multiple of 8.
-- The bytes after `size` are workspace. Their old contents do not change any result.
+- The caller sets only `size`. The rest is workspace.
+- The old contents of the workspace do not change any result.
+- `Level` and `Work` are in [merkleization.md](merkleization.md).
+
+## Type `Ctx`
+
+What every internal function reads. Internal.
+
+### Layout
+
+| Offset | Field | Type | Meaning |
+|---|---|---|---|
+| 0 | `nodes` | u64 | Address of the first `TypeNode` |
+| 8 | `fields` | u64 | Address of the first `TypeField` |
+| 16 | `write` | u64 | 1: write the output. 0: only measure it. |
+| 24 | `end` | u64 | Deserialize: the address after the last encoded byte |
+| 32 | `sha` | u64 | Address of the `sha` `ByteList` in `Scratch` |
+| 40 | `zero` | u64 | Address of the 65 zero roots in [include/ssz_zero_hashes.inc](../../include/ssz_zero_hashes.inc) |
+
+### Rules
+
+- 64 bytes.
+- Each L2 function fills it in its `Scratch`.
+- Internal functions do not change it.
+
+## Type `Slot`
+
+Where one value is. Internal.
+
+### Layout
+
+| Offset | Field | Type | Meaning |
+|---|---|---|---|
+| 0 | `p` | u64 | Address of the in-place storage, or of the start of a value |
+| 8 | `b` | u64 | Address of the value that holds the in-place storage |
+| 16 | `form` | u64 | `SSZ_FORM_PLACE`, `SSZ_FORM_NESTED` or `SSZ_FORM_TOP` |
+| 24 | `scope` | u64 | Deserialize: the bytes that the encoding gives this value |
+
+### Rules
+
+- 32 bytes.
+- `SSZ_FORM_PLACE`: `p` is in-place storage inside the value at `b`.
+- `SSZ_FORM_NESTED`: `p` starts a nested value in a part.
+- `SSZ_FORM_TOP`: `p` starts the caller's value.
+- When a deserialize function only measures, the caller's value starts at address 0.
+
+## Type `Cursor`
+
+Where the next byte goes or comes from. Internal.
+
+### Layout
+
+| Offset | Field | Type | Meaning |
+|---|---|---|---|
+| 0 | `out` | u64 | Serialize: address of the next output byte |
+| 0 | `pos` | u64 | Deserialize: address of the next encoded byte |
+| 8 | `next` | u64 | Deserialize: address of the next free byte of the value |
+
+### Rules
+
+- 16 bytes.
+- When a function only measures, `out` starts at 0.
 
 ## Test vectors
 

@@ -43,6 +43,9 @@
 .set SSZ_PATH_INTO_PACKED, 26
 .set SSZ_PATH_INTO_GAP, 27
 
+/* Decode refusal for a top-level byte vector of the wrong length (v0.1.0 ValueFault COUNT). */
+.set SSZ_COUNT, 28
+
 /* ---------------------------------------------------------------- Type descriptor */
 
 /* Descriptor value: fixed fields. */
@@ -106,19 +109,89 @@
 .set SSZ_BYTES_PER_CHUNK, 32
 .set SSZ_BYTES_PER_LENGTH_OFFSET, 4
 
+/* ---------------------------------------------------------------- Internal layouts */
+
+/* Scratch, as every L2 function lays it out. */
+.set SSZ_SCR_SHA, 8                /* ByteList of 88 bytes: the 64-byte input of one SHA-256 */
+.set SSZ_SCR_CTX, 96               /* Ctx */
+.set SSZ_SCR_LEVEL, 160            /* Level of the root type */
+.set SSZ_SCR_WORK, 256             /* work area of the root level */
+
+/* Ctx: values that every L0 helper reads. */
+.set SSZ_CTX_NODES, 0              /* address of the first TypeNode */
+.set SSZ_CTX_FIELDS, 8             /* address of the first TypeField */
+.set SSZ_CTX_WRITE, 16             /* 1: write the output; 0: only measure it */
+.set SSZ_CTX_END, 24               /* deserialize: address after the last encoded byte */
+.set SSZ_CTX_SHA, 32               /* address of the SHA-256 ByteList */
+.set SSZ_CTX_ZERO, 40              /* address of the zero hash table */
+.set SSZ_CTX_SIZE, 64
+
+/* Slot: where one value is. */
+.set SSZ_SLOT_P, 0                 /* in-place storage, or the start of a value */
+.set SSZ_SLOT_B, 8                 /* start of the value that holds in-place storage */
+.set SSZ_SLOT_FORM, 16
+.set SSZ_SLOT_SCOPE, 24            /* deserialize: bytes the encoding gives this value */
+.set SSZ_SLOT_SIZE, 32
+.set SSZ_FORM_PLACE, 0             /* p is in-place storage inside the value at b */
+.set SSZ_FORM_NESTED, 1            /* p starts a nested value; deserialize writes its size */
+.set SSZ_FORM_TOP, 2               /* p starts the caller's value */
+
+/* Cursor. serialize: out. deserialize: pos, then next. */
+.set SSZ_CUR_OUT, 0                /* next output byte (an offset when only measuring) */
+.set SSZ_CUR_POS, 0                /* next encoded byte to read */
+.set SSZ_CUR_NEXT, 8               /* next free byte of the value (an offset when only measuring) */
+.set SSZ_CUR_SIZE, 16
+
+/* Level: the leaves of one value at its own tree level. */
+.set SSZ_LEVEL_MODE, 0
+.set SSZ_LEVEL_COUNT, 8            /* leaves that hold data */
+.set SSZ_LEVEL_A, 16               /* packed: data; fixed, variable: element TypeNode; fields: container TypeNode */
+.set SSZ_LEVEL_B, 24               /* packed: data length; fixed, variable: first element; fields: container value */
+.set SSZ_LEVEL_C, 32               /* fixed: element stride */
+.set SSZ_LEVEL_DEPTH, 40           /* tree depth: ceil(log2(chunks)) */
+.set SSZ_LEVEL_MIXIN, 48           /* 1 when the root mixes in a length */
+.set SSZ_LEVEL_LENGTH, 56          /* the length it mixes in */
+.set SSZ_LEVEL_WALK_I, 64          /* variable: index of the element at walk_v */
+.set SSZ_LEVEL_WALK_V, 72          /* variable: address of that element */
+.set SSZ_LEVEL_SIZE, 96
+.set SSZ_MODE_PACKED, 0            /* leaves are chunks of bytes */
+.set SSZ_MODE_FIXED, 1             /* leaves are roots of fixed size elements */
+.set SSZ_MODE_VARIABLE, 2          /* leaves are roots of nested values */
+.set SSZ_MODE_FIELDS, 3            /* leaves are roots of container fields */
+
+/* Range: one subtree of a level. */
+.set SSZ_RANGE_LO, 0               /* first leaf */
+.set SSZ_RANGE_DEPTH, 8            /* subtree depth */
+.set SSZ_RANGE_SIZE, 16
+
 /*
  * Functions, roles and allowed calls (ARCHITECTURE.md sections 4 and 5).
+ * Requirements: docs/reference/<file>.md.
  *
- * | Function                  | Role | Arguments, then outputs                  | Requirements      |
- * |---------------------------|------|------------------------------------------|-------------------|
- * | ssz_serialize             | L2   | type, value, scratch; serialized         | serialization.md  |
- * | ssz_serialize_size        | L2   | type, value, scratch; size               | serialization.md  |
- * | ssz_deserialize           | L2   | type, serialized, scratch; value         | serialization.md  |
- * | ssz_deserialize_size      | L2   | type, serialized, scratch; size          | serialization.md  |
- * | ssz_hash_tree_root        | L2   | type, value, scratch; root               | merkleization.md  |
- * | ssz_get_generalized_index | L2   | type, path; gindex                       | proofs.md         |
- * | ssz_build_proof           | L2   | type, value, gindex, scratch; branch     | proofs.md         |
+ * | Function                  | Role | Arguments; outputs                          | File             |
+ * |---------------------------|------|---------------------------------------------|------------------|
+ * | ssz_serialize             | L2   | type, value, scratch; serialized            | serialization.md |
+ * | ssz_serialize_size        | L2   | type, value, scratch; size                  | serialization.md |
+ * | ssz_deserialize           | L2   | type, serialized, scratch; value            | serialization.md |
+ * | ssz_deserialize_size      | L2   | type, serialized, scratch; size             | serialization.md |
+ * | ssz_hash_tree_root        | L2   | type, value, scratch; root                  | merkleization.md |
+ * | ssz_get_generalized_index | L2   | type, path; gindex                          | proofs.md        |
+ * | ssz_build_proof           | L2   | type, value, gindex, scratch; branch        | proofs.md        |
+ * | ssz_l0_ser                | L0   | ctx, node, slot, cursor (state)             | serialization.md |
+ * | ssz_l0_de                 | L0   | ctx, node, slot, cursor (state)             | serialization.md |
+ * | ssz_l0_level              | L0   | ctx, node, slot; level                      | merkleization.md |
+ * | ssz_l0_child              | L0   | ctx, level (state), index; child            | merkleization.md |
+ * | ssz_l0_leaf               | L0   | ctx, level (state), index, work; out        | merkleization.md |
+ * | ssz_l0_root               | L0   | ctx, level (state), work; out               | merkleization.md |
+ * | ssz_l0_merkleize          | L0   | ctx, level (state), range, work; out        | merkleization.md |
+ * | ssz_l0_hash               | L0   | ctx, left, right; out                       | merkleization.md |
  *
- * Allowed calls out of this repo: crypto_sha256 from asm-crypto (README, Dependencies),
- * from ssz_hash_tree_root and ssz_build_proof only.
+ * Allowed calls:
+ * - ssz_serialize, ssz_serialize_size: ssz_l0_ser. ssz_l0_ser: itself.
+ * - ssz_deserialize, ssz_deserialize_size: ssz_l0_de. ssz_l0_de: itself.
+ * - ssz_hash_tree_root: ssz_l0_level, ssz_l0_root.
+ * - ssz_build_proof: ssz_l0_level, ssz_l0_child, ssz_l0_merkleize.
+ * - ssz_l0_root: ssz_l0_merkleize, ssz_l0_hash. ssz_l0_merkleize: ssz_l0_leaf, ssz_l0_hash.
+ * - ssz_l0_leaf: ssz_l0_child, ssz_l0_root. ssz_l0_child: ssz_l0_level.
+ * - ssz_l0_hash: crypto_sha256 from asm-crypto (README, Dependencies).
  */

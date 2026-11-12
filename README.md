@@ -32,6 +32,8 @@ Standard: [asm-standard@dc3b2a7](https://github.com/bitminetech/asm-standard/blo
 | Used for | Tool |
 |---|---|
 | Library | LLVM 23.1.5, official release (`clang`, `llvm-ar`, `lld`) |
+| Windows test runner | [llvm-mingw 20261104](https://github.com/mstorsjo/llvm-mingw/releases/tag/20261104) (LLVM 23.1.5) |
+| macOS test runner | The host Xcode clang, because it needs the macOS SDK |
 | Build image | [platform/linux/Dockerfile](platform/linux/Dockerfile) on `debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2` |
 
 ## Tests
@@ -39,6 +41,7 @@ Standard: [asm-standard@dc3b2a7](https://github.com/bitminetech/asm-standard/blo
 | Item | Location |
 |---|---|
 | Vector generator | [tests/generator/](tests/generator/) |
+| Test runner | [tests/runner/](tests/runner/) |
 
 ## Target profile
 
@@ -56,7 +59,7 @@ Standard: [asm-standard@dc3b2a7](https://github.com/bitminetech/asm-standard/blo
 
 | Item | Value |
 |---|---|
-| Stack per call | At most 1024 bytes, `crypto_sha256` included |
+| Stack per call | At most 6144 bytes, callees included |
 
 ## Integration
 

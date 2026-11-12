@@ -22,6 +22,9 @@ PART_REF = 16
 LIST_VALUE_FIXED = 24
 CHUNK = 32
 UINT_WIDTHS = (1, 4, 8, 32)  # Uint8, Uint32, Uint64, Uint256: the widths the live forks use
+LEVEL_SIZE = 96              # SSZ_LEVEL_SIZE
+SCRATCH_WORK = 256           # SSZ_SCR_WORK: the root level's work area starts here
+MAX_LEVELS = 12              # nested types; this bounds the stack (README)
 
 
 def ceil_div(a, b):
@@ -133,9 +136,36 @@ def build_nodes(order):
             n.value_fixed = n.mem if n.ssz else LIST_VALUE_FIXED
         if n.ssz and n.ssz != t.get_byte_length():
             raise AssertionError(f"{t.__name__}: SSZ size {n.ssz} != {t.get_byte_length()}")
-        n.scratch = 0  # The rule that fills scratch is recorded with the v1 assembly.
+        n.work = work_bytes(t, n, nodes)
+        n.levels = 1 + max((nodes[c].levels for c in children(t)), default=0)
+        if n.levels > MAX_LEVELS:
+            raise ValueError(f"{t.__name__}: {n.levels} nested types, the limit is {MAX_LEVELS}")
+        n.scratch = SCRATCH_WORK + n.work
         nodes[t] = n
     return nodes
+
+
+def tree_depth(chunks):
+    """ceil(log2(chunks)), the depth of the tree at a type's own level."""
+    return (chunks - 1).bit_length() if chunks > 1 else 0
+
+
+def work_bytes(t, n, nodes):
+    """
+    Work area that ssz_l0_root needs for a value of type t: its size header, a
+    frontier of depth + 1 nodes and the node h; and, when leaves are child
+    values, a size header, a child Level and the child's own work area.
+    """
+    work = 8 + 32 * (tree_depth(n.chunks) + 2)
+    # Container fields are always child values; vector and list elements are,
+    # unless they are basic, which pack into chunks.
+    if issubclass(t, Container):
+        leaves = children(t)
+    else:
+        leaves = [c for c in children(t) if not is_basic(c)]
+    if leaves:
+        work += 8 + LEVEL_SIZE + max(nodes[c].work for c in leaves)
+    return work
 
 
 def build(root):
