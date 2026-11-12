@@ -22,9 +22,17 @@ docker run --rm -v "$root:/src:ro" -v "$out:/out" asm-ssz-build sh -eu -c '
         git -C $spec fetch -q --depth 1 https://github.com/ethereum/consensus-specs $commit
         git -C $spec checkout -q FETCH_HEAD
     fi
+    ssz_commit=7bce07ff7d51b1a3c66ff4e2bd3233ac248ede70    # ssz-specs v0.1.0
+    ssz_specs=/out/ssz-specs
+    if [ "$(git -C $ssz_specs rev-parse HEAD 2>/dev/null)" != "$ssz_commit" ]; then
+        rm -rf $ssz_specs
+        git init -q $ssz_specs
+        git -C $ssz_specs fetch -q --depth 1 https://github.com/ethereum/ssz-specs $ssz_commit
+        git -C $ssz_specs checkout -q FETCH_HEAD
+    fi
     [ -x /out/.venv/bin/python ] || python3 -m venv /out/.venv
     /out/.venv/bin/pip install -q --disable-pip-version-check -r tests/generator/requirements.txt
     (cd $spec && /out/.venv/bin/python -m pysetup.generate_specs --all-forks)
-    PYTHONPATH=$spec/tests/core/pyspec:$spec CONSENSUS_SPECS=$spec \
+    PYTHONPATH=$spec/tests/core/pyspec:$spec CONSENSUS_SPECS=$spec SSZ_SPECS=$ssz_specs \
         /out/.venv/bin/python tests/generator/generate.py /out
 '

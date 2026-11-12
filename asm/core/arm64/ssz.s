@@ -1381,6 +1381,7 @@ FUNCTION ssz_get_generalized_index
     mov     x14, #0                        /* step number */
     mov     x15, #1                        /* index */
     mov     x3, #0                         /* 1 once the path is inside a basic value */
+    mov     x1, #0                         /* 1 once the index needs more than 64 bits */
 1:  cmp     x14, x13
     b.hs    90f
     ldr     x4, [x12, x14, lsl #3]
@@ -1400,7 +1401,7 @@ FUNCTION ssz_get_generalized_index
 2:  add     x6, x14, #1
     cmp     x6, x13
     b.ne    83f
-    tbnz    x15, #63, 86f
+    orr     x1, x1, x15, lsr #63
     lsl     x15, x15, #1
     add     x15, x15, #1
     b       90f
@@ -1460,19 +1461,23 @@ FUNCTION ssz_get_generalized_index
     b.eq    51f
     cmp     x5, #SSZ_KIND_BIT_LIST
     b.ne    52f
-51: tbnz    x15, #63, 86f
+51: orr     x1, x1, x15, lsr #63
     lsl     x15, x15, #1
 52: cbz     x6, 53f
     mov     x7, #64
     sub     x7, x7, x6
     lsr     x17, x15, x7
-    cbnz    x17, 86f
+    cmp     x17, #0
+    cset    x17, ne
+    orr     x1, x1, x17
     lsl     x15, x15, x6
     orr     x15, x15, x8
 53: mov     x11, x16
     add     x14, x14, #1
     b       1b
-90: str     x15, [x2]
+90: /* the 64 bit limit applies only to a path that is otherwise valid */
+    cbnz    x1, 86f
+    str     x15, [x2]
     mov     x0, #SSZ_OK
     ret
 81: mov     x0, #SSZ_NO_PARTS
@@ -1506,6 +1511,8 @@ FUNCTION ssz_build_proof
     ROOT_NODE
     mov     x25, x20
     cbz     x24, 82f
+    cmp     x24, #1
+    b.eq    81f
     ldr     x9, [x23]
     ldr     x10, [x25, #SSZ_NODE_SCRATCH]
     cmp     x9, x10
@@ -1650,6 +1657,8 @@ FUNCTION ssz_build_proof
 79: mov     x0, #SSZ_OK
     b       90f
 80: mov     x0, #SSZ_BUFFER_TOO_SMALL
+    b       90f
+81: mov     x0, #SSZ_ROOT_HAS_NO_BRANCH
     b       90f
 82: mov     x0, #SSZ_NOT_A_GINDEX
     b       90f

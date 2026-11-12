@@ -7,7 +7,9 @@ Run it through tests/generator/run.sh, which uses the image from
 platform/linux/Dockerfile and the packages in requirements.txt. The file format
 is in README.md next to this script.
 """
+import ast
 import hashlib
+import json
 import os
 import pathlib
 import re
@@ -25,6 +27,7 @@ from ssz.verification import verify_merkle_proof
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import descriptor  # noqa: E402
+import refusals  # noqa: E402
 
 COMMIT = "aa16bb4c156184e9548a997d53efaf2a228a6304"  # consensus-specs v1.7.0-beta.4
 RELEASE = "https://github.com/ethereum/consensus-specs/releases/download/v1.7.0-beta.4/"
@@ -33,6 +36,13 @@ ARCHIVES = {
     "minimal": "26d09aea70c62ed235a120a95082d544ab1c2e6fe36bd35ea1bd5da62f3b7b68",
 }
 FORKS = ("phase0", "altair", "bellatrix", "capella", "deneb", "electra", "fulu")
+SSZ_SPECS_COMMIT = "7bce07ff7d51b1a3c66ff4e2bd3233ac248ede70"  # ssz-specs v0.1.0
+SSZ_SPECS_VECTORS = ("https://github.com/ethereum/ssz-specs/releases/download/v0.1.0/"
+                     "ssz-test-vectors-v0.1.0.tar.gz",
+                     "e2a65f032b59835c26127295293ea1bc07d7ca0ea1fe0e4f1128dffed333f878")
+# The ssz-specs vector groups whose types the live forks use. The other groups
+# test compatible unions and progressive types.
+SSZ_SPECS_GROUPS = ("test_basic_types", "test_decode_failure_smoke", "test_merkleization_boundaries")
 # Spec files whose constant tables give a generalized index with its path.
 GINDEX_SOURCES = {
     "altair": "specs/altair/light-client/sync-protocol.md",
@@ -46,7 +56,7 @@ CASE = re.compile(
 )
 
 MAGIC = b"SSZVEC01"
-KIND_STATIC, KIND_PROOF, KIND_GINDEX, KIND_VERIFY = 1, 2, 3, 4
+KIND_STATIC, KIND_PROOF, KIND_GINDEX, KIND_VERIFY, KIND_REJECT, KIND_PROOF_OUTCOME = 1, 2, 3, 4, 5, 6
 SSZ_INC = pathlib.Path(__file__).resolve().parents[2] / "include" / "ssz.inc"
 
 
@@ -182,6 +192,101 @@ def verify_cases(out, codes, name, leaf, gindex, branch, root):
                          + u64(len(v_branch)) + b"".join(v_branch) + u64(status) + u64(valid))
 
 
+def filler_types(path):
+    """
+    The SSZ types that one ssz-specs filler file declares. Only its imports from
+    the ssz package and its class definitions run, so the test framework is not needed.
+    """
+    tree = ast.parse(path.read_text())
+    keep = [node for node in tree.body
+            if isinstance(node, ast.ClassDef)
+            or (isinstance(node, ast.ImportFrom) and node.module in ("ssz", "typing"))]
+    names = {}
+    exec(compile(ast.Module(body=keep, type_ignores=[]), str(path), "exec"), names)
+    return names
+
+
+def ssz_specs_cases(ssz_specs_dir, archive, codes):
+    """
+    The ssz-specs v0.1.0 vectors in the groups that the live forks need: valid
+    cases as static cases, decode failures as reject cases. The Python spec checks
+    each one. Returns the two outputs and the cases left out, with the reason.
+    """
+    import ssz
+    static, reject, skipped = Output(KIND_STATIC), Output(KIND_REJECT), []
+    with tarfile.open(archive, "r:gz") as tar:
+        for member in sorted(tar.getmembers(), key=lambda m: m.name):
+            m = re.match(r"fixtures/ssz/ssz/(\w+)/(\w+)\.json$", member.name)
+            if not member.isfile() or not m:
+                continue
+            group = m.group(1)
+            if group not in SSZ_SPECS_GROUPS:
+                skipped.append((member.name, "union or progressive type"))
+                continue
+            types = filler_types(ssz_specs_dir / "tests/fillers/ssz" / f"{group}.py")
+            for test_id, case in json.load(tar.extractfile(member)).items():
+                ssz_type = types.get(case["typeName"]) or getattr(ssz, case["typeName"])
+                try:
+                    descriptor.build(ssz_type)
+                except ValueError as e:
+                    skipped.append((test_id, str(e)))
+                    continue
+                name = f"ssz-specs/{test_id}"
+                if "rejectionReason" in case:
+                    raw = bytes.fromhex(case["rawBytes"][2:])
+                    try:
+                        ssz_type.decode_bytes(raw)
+                        fail(f"{name}: the spec decodes the rejected bytes")
+                    except SSZValueError as e:
+                        if e.fault.name != case["rejectionReason"]:
+                            fail(f"{name}: the spec gives {e.fault.name}, the case {case['rejectionReason']}")
+                    reject.cases.append(blob(name.encode()) + u64(reject.descriptor(ssz_type)) + blob(raw)
+                                        + u64(codes[case["rejectionReason"]]))
+                else:
+                    serialized = bytes.fromhex(case["serialized"][2:])
+                    root = bytes.fromhex(case["root"][2:])
+                    if bytes(ssz_type.decode_bytes(serialized).hash_tree_root()) != root:
+                        fail(f"{name}: the spec type does not give the case root")
+                    static.cases.append(blob(name.encode()) + u64(static.descriptor(ssz_type))
+                                        + blob(serialized) + root)
+    return static, reject, skipped
+
+
+def refusal_outputs(codes, seeds, path_types, proof_values):
+    """The generated refusal vectors (refusals.py), as four outputs by file name."""
+    def need(group, seen):
+        missing = [name for name in group if name not in seen]
+        if missing:
+            fail(f"no generated case for {', '.join(missing)}")
+
+    static_out, reject_out = Output(KIND_STATIC), Output(KIND_REJECT)
+    static, reject, seen = refusals.decode_cases(refusals.small_seeds() + seeds)
+    need(refusals.DECODE_FAULTS, seen)
+    for label, t, encoding, root in static:
+        static_out.cases.append(blob(label.encode()) + u64(static_out.descriptor(t)) + blob(encoding) + root)
+    for label, t, encoding, fault in reject:
+        reject_out.cases.append(blob(label.encode()) + u64(reject_out.descriptor(t)) + blob(encoding)
+                                + u64(codes[fault]))
+
+    gindex_out = Output(KIND_GINDEX)
+    small = [(f"small/{t.__name__}", t) for t in refusals.SMALL_TYPES + refusals.PATH_ONLY_TYPES]
+    cases, seen = refusals.path_cases(small + path_types)
+    need(refusals.PATH_FAULTS, seen)
+    for label, t, steps, fault, index in cases:
+        gindex_out.cases.append(blob(label.encode()) + u64(gindex_out.descriptor(t)) + u64(len(steps))
+                                + b"".join(u64(x) for x in steps) + u64(codes[fault] if fault else 0)
+                                + u64(index))
+
+    proof_out = Output(KIND_PROOF_OUTCOME)
+    cases, seen = refusals.proof_cases(refusals.small_values() + proof_values)
+    need(refusals.PROOF_FAULTS, seen)
+    for label, t, encoding, g, fault, branch in cases:
+        proof_out.cases.append(blob(label.encode()) + u64(proof_out.descriptor(t)) + blob(encoding) + u64(g)
+                               + u64(codes[fault] if fault else 0) + u64(len(branch)) + b"".join(branch))
+    return {"generated-static.bin": static_out, "generated-reject.bin": reject_out,
+            "generated-gindex.bin": gindex_out, "generated-proof.bin": proof_out}
+
+
 def gindex_cases(spec_dir):
     """The generalized indices that the spec states with their paths."""
     out = Output(KIND_GINDEX)
@@ -203,7 +308,8 @@ def gindex_cases(spec_dir):
                 current = dict(current._FIELD_TYPES)[step]
             name = f"{fork}/{type_fork}.{type_name}/{'.'.join(names)}"
             out.cases.append(blob(name.encode()) + u64(out.descriptor(ssz_type))
-                             + u64(len(indices)) + b"".join(u64(i) for i in indices) + u64(int(expected)))
+                             + u64(len(indices)) + b"".join(u64(i) for i in indices) + u64(0)
+                             + u64(int(expected)))
     return out
 
 
@@ -224,6 +330,22 @@ def main():
     count, digest = gindex.write(out_dir / "gindex.bin")
     written.append(("gindex.bin", count, digest))
 
+    ssz_specs_dir = pathlib.Path(os.environ["SSZ_SPECS"])
+    if subprocess.run(["git", "-C", str(ssz_specs_dir), "rev-parse", "HEAD"], capture_output=True,
+                      text=True).stdout.strip() != SSZ_SPECS_COMMIT:
+        fail(f"{ssz_specs_dir} is not ssz-specs at {SSZ_SPECS_COMMIT}")
+    archive = cache / "ssz-test-vectors-v0.1.0.tar.gz"
+    fetch(SSZ_SPECS_VECTORS[0], SSZ_SPECS_VECTORS[1], archive)
+    static, reject, skipped = ssz_specs_cases(ssz_specs_dir, archive, codes)
+    for file_name, out in (("ssz-specs-static.bin", static), ("ssz-specs-reject.bin", reject)):
+        count, digest = out.write(out_dir / file_name)
+        written.append((file_name, count, digest))
+    for name, reason in skipped:
+        print(f"left out: {name}: {reason}")
+
+    # Inputs for the generated refusal vectors: the two smallest minimal encodings
+    # of each type, each type once, and the value of every proof case.
+    seeds, path_types, proof_values, descriptors, built = {}, [], [], set(), {}
     for preset, sha256 in ARCHIVES.items():
         archive = cache / f"{preset}.tar.gz"
         fetch(RELEASE + f"{preset}.tar.gz", sha256, archive)
@@ -240,12 +362,25 @@ def main():
                     checked.add((fork, type_name))
                     if bytes(ssz_type.decode_bytes(serialized).hash_tree_root()) != root:
                         fail(f"{name}: the spec type does not give the case root")
+                    d = built.setdefault(ssz_type, descriptor.build(ssz_type))
+                    if d not in descriptors:
+                        descriptors.add(d)
+                        path_types.append((f"{preset}/{fork}/{type_name}", ssz_type))
+                        if preset == "minimal":
+                            seeds[d] = (f"{preset}/{fork}/{type_name}", ssz_type, [])
+                if preset == "minimal":
+                    d = built[ssz_type]
+                    if d in seeds:
+                        smallest = sorted(seeds[d][2] + [serialized], key=len)[:2]
+                        seeds[d] = (seeds[d][0], seeds[d][1], smallest)
             else:
                 out = outputs.setdefault((fork, "proof"), Output(KIND_PROOF))
                 obj, leaf_index, leaf, branch = proof_case(out, ssz_type, name, files)
                 value = ssz_type.decode_bytes(obj)
                 if [bytes(n) for n in spec.compute_merkle_proof(value, leaf_index)] != branch:
                     fail(f"{name}: the spec proof differs from the case branch")
+                if not any(t is ssz_type and o == obj for _, t, o in proof_values):
+                    proof_values.append((f"{preset}/{fork}/{type_name}/{case}", ssz_type, obj))
                 verify = outputs.setdefault((fork, "verify"), Output(KIND_VERIFY))
                 verify_cases(verify, codes, name, leaf, leaf_index, branch,
                              bytes(value.hash_tree_root()))
@@ -254,6 +389,12 @@ def main():
             count, digest = out.write(out_dir / file_name)
             written.append((file_name, count, digest))
             print(f"{file_name} {count}", flush=True)
+
+    values = [(label, t, t.decode_bytes(obj)) for label, t, obj in proof_values]
+    for file_name, out in refusal_outputs(codes, list(seeds.values()), path_types, values).items():
+        count, digest = out.write(out_dir / file_name)
+        written.append((file_name, count, digest))
+        print(f"{file_name} {count}", flush=True)
 
     lines = [f"{name} {count} {digest}" for name, count, digest in written]
     (out_dir / "manifest.txt").write_text("\n".join(lines) + "\n")

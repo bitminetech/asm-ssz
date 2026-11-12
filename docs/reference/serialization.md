@@ -598,6 +598,20 @@ Where the next byte goes or comes from.
   - `minimal.tar.gz`, SHA-256: `26d09aea70c62ed235a120a95082d544ab1c2e6fe36bd35ea1bd5da62f3b7b68`
 - Type of each case: the Python spec at [consensus-specs@aa16bb4](https://github.com/ethereum/consensus-specs/tree/aa16bb4c156184e9548a997d53efaf2a228a6304), with the packages in [tests/generator/requirements.txt](../../tests/generator/requirements.txt).
 - Check: for the first case of each type, the Python spec decodes the encoding and gives the case root.
+- ssz-specs v0.1.0 vectors, groups `test_basic_types`, `test_decode_failure_smoke` and `test_merkleization_boundaries`.
+  - Release: [v0.1.0](https://github.com/ethereum/ssz-specs/releases/tag/v0.1.0)
+  - `ssz-test-vectors-v0.1.0.tar.gz`, SHA-256: `e2a65f032b59835c26127295293ea1bc07d7ca0ea1fe0e4f1128dffed333f878`
+  - Types: the filler files in `tests/fillers/ssz/` at [ssz-specs@7bce07f](https://github.com/ethereum/ssz-specs/tree/7bce07ff7d51b1a3c66ff4e2bd3233ac248ede70/tests/fillers/ssz).
+  - Valid cases: the encoding and its root, run like the `ssz_static` cases.
+  - Decode failure cases: the rejected bytes and the `ValueFault` name. Both deserialize functions must return the refusal constant of that name.
+  - Check: the Python spec decodes each valid case to its root, and rejects each decode failure case with its fault.
+  - Left out: the `Uint16` and `Uint128` cases, and the union and progressive groups. No live fork uses these types.
+- Generated refusal vectors: [tests/generator/refusals.py](../../tests/generator/refusals.py).
+  - Inputs: the two smallest minimal encodings of each `ssz_static` type, and values of small types made to reach each refusal.
+  - Changes: cut, extended, and one byte changed.
+  - Expected results: ssz-specs v0.1.0 `decode_bytes`. A rejected input expects the refusal constant of its fault. An accepted one runs like an `ssz_static` case.
+  - Every decode refusal constant has cases, except `SSZ_TRAILING_BYTES`.
+  - `SSZ_TRAILING_BYTES` cannot occur for these types: `decode_bytes` gives `deserialize` the whole input as its scope, and every type in scope reads its whole scope or refuses first.
 
 ## Results
 

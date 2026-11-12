@@ -1436,7 +1436,7 @@ END_FUNCTION ssz_hash_tree_root
  * r9 1 once the path is inside a basic value. Locals: gindex 0, depth 8.
  */
 FUNCTION ssz_get_generalized_index
-    ENTER   16
+    ENTER   32
     mov     %rdx, 0(%rsp)
     mov     SSZ_DESC_NODES_OFFSET(%rdi), %r12
     add     %rdi, %r12
@@ -1451,6 +1451,7 @@ FUNCTION ssz_get_generalized_index
     xor     %ebp, %ebp
     mov     $1, %r8d
     xor     %r9d, %r9d
+    movq    $(0), 16(%rsp)                 /* 1 once the index needs more than 64 bits */
 1:  cmp     %rbx, %rbp
     jae     90f
     mov     (%r15,%rbp,8), %r10
@@ -1471,8 +1472,9 @@ FUNCTION ssz_get_generalized_index
 2:  lea     1(%rbp), %rax
     cmp     %rbx, %rax
     jne     83f
-    bt      $63, %r8
-    jc      86f
+    mov     %r8, %rax
+    shr     $(63), %rax
+    or      %rax, 16(%rsp)
     lea     1(%r8,%r8), %r8
     jmp     90f
 10: mov     SSZ_NODE_CHUNKS(%r14), %rax
@@ -1535,8 +1537,9 @@ FUNCTION ssz_get_generalized_index
     je      51f
     cmp     $SSZ_KIND_BIT_LIST, %r11
     jne     52f
-51: bt      $63, %r8
-    jc      86f
+51: mov     %r8, %rax
+    shr     $(63), %rax
+    or      %rax, 16(%rsp)
     shl     $1, %r8
 52: mov     8(%rsp), %r11
     test    %r11, %r11
@@ -1546,14 +1549,19 @@ FUNCTION ssz_get_generalized_index
     mov     %r8, %rax
     shr     %cl, %rax
     test    %rax, %rax
-    jnz     86f
+    setnz   %al
+    movzbl  %al, %eax
+    or      %rax, 16(%rsp)
     mov     %r11d, %ecx
     shl     %cl, %r8
     or      %rsi, %r8
 53: mov     %rdi, %r14
     inc     %rbp
     jmp     1b
-90: mov     0(%rsp), %rdx
+90: /* the 64 bit limit applies only to a path that is otherwise valid */
+    cmpq    $(0), 16(%rsp)
+    jne     86f
+    mov     0(%rsp), %rdx
     mov     %r8, (%rdx)
     xor     %eax, %eax
     jmp     99f
@@ -1568,7 +1576,7 @@ FUNCTION ssz_get_generalized_index
 85: mov     $SSZ_NO_SUCH_POSITION, %eax
     jmp     99f
 86: mov     $SSZ_GINDEX_TOO_LARGE, %eax
-99: LEAVE   16
+99: LEAVE   32
 END_FUNCTION ssz_get_generalized_index
 
 /*
@@ -1588,6 +1596,8 @@ FUNCTION ssz_build_proof
     mov     %r12, 120(%rsp)
     test    %r15, %r15
     jz      82f
+    cmp     $(1), %r15
+    je      81f
     mov     (%rcx), %rax
     cmp     SSZ_NODE_SCRATCH(%r12), %rax
     jb      80f
@@ -1739,6 +1749,8 @@ FUNCTION ssz_build_proof
 79: xor     %eax, %eax
     jmp     99f
 80: mov     $SSZ_BUFFER_TOO_SMALL, %eax
+    jmp     99f
+81: mov     $SSZ_ROOT_HAS_NO_BRANCH, %eax
     jmp     99f
 82: mov     $SSZ_NOT_A_GINDEX, %eax
     jmp     99f

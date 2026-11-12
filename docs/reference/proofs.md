@@ -45,7 +45,7 @@ ssz_get_generalized_index(type, path, gindex) -> status
 
 - `SSZ_OK`: `gindex` holds the index.
 - A path refusal constant from [include/ssz.inc](../../include/ssz.inc): a step breaks a v0.1.0 rule. It names the first fault that v0.1.0 raises.
-- `SSZ_GINDEX_TOO_LARGE`: the index needs more than 64 bits.
+- `SSZ_GINDEX_TOO_LARGE`: every step is valid, but the index needs more than 64 bits.
 
 ### Caller must
 
@@ -67,7 +67,7 @@ ssz_get_generalized_index(type, path, gindex) -> status
 
 ### Limits
 
-- Stack: 80 bytes on x86-64, return address included, 0 bytes on ARM64 and 96 bytes on RISC-V.
+- Stack: 96 bytes on x86-64, return address included, 0 bytes on ARM64 and 96 bytes on RISC-V.
 
 ### ABI
 
@@ -101,6 +101,8 @@ ssz_build_proof(type, value, gindex, scratch, branch) -> status
 ### Returns
 
 - `SSZ_OK`: `branch` holds the branch.
+- `SSZ_NOT_A_GINDEX`: the index is 0.
+- `SSZ_ROOT_HAS_NO_BRANCH`: the index is 1.
 - A proof refusal constant from [include/ssz.inc](../../include/ssz.inc): the value's tree does not reach `gindex`. It names the first fault that v0.1.0 raises.
 - `SSZ_BUFFER_TOO_SMALL`: `branch` or `scratch` is too small. `branch` is then invalid.
 
@@ -114,11 +116,10 @@ ssz_build_proof(type, value, gindex, scratch, branch) -> status
 
 ### Function does
 
-- Checks for index 0, then `scratch`, then the path, then `branch`.
+- Checks the index for 0 and 1, then `scratch`, then the path, then `branch`.
 - Builds the branch as v0.1.0 `build_proof` builds it.
 - Writes the sibling of each node on the path, from the node up to the root.
 - Reads each sibling with v0.1.0 `node_root`.
-- Writes an empty branch for index 1.
 - Sets `offset` of `branch` to 24 and `count` to the number of nodes.
 - Keeps the `size` field of `branch`.
 - Hashes with `crypto_sha256` from asm-crypto.
@@ -269,6 +270,12 @@ A list of tree nodes.
 - Verification: each proof case above with the root of its object, and 9 changed copies of it.
   - Changes: the leaf, the root, the first node or the last node changed; the sibling index; one node missing or extra; index 1; index 0.
   - Expected results: ssz-specs v0.1.0 `verify_merkle_proof`.
+- Generated paths: random walks from every type in the `ssz_static` tests and the small types in [tests/generator/refusals.py](../../tests/generator/refusals.py), valid and not.
+  - Expected results: ssz-specs v0.1.0 `get_generalized_index`. An index of 64 bits or more expects `SSZ_GINDEX_TOO_LARGE`.
+  - Every path refusal constant has cases.
+- Generated proofs: index 0, index 1 and random generalized indices into each proof object and into values of the small types.
+  - Expected results: ssz-specs v0.1.0 `build_proof`.
+  - Every proof refusal constant has cases.
 
 ## Results
 

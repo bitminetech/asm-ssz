@@ -40,6 +40,14 @@ SSZ_ABI uint64_t ssz_verify_merkle_proof(const void *leaf, const void *branch, c
 #define GUARD 64
 #define FILL 0xA5
 
+/* The reason for a status mismatch, with both statuses. */
+static char status_why[96];
+static const char *status_differs(const char *function, uint64_t got, uint64_t want) {
+    snprintf(status_why, sizeof status_why, "%s status %llu, expected %llu", function,
+             (unsigned long long)got, (unsigned long long)want);
+    return status_why;
+}
+
 /*
  * Stack check. paint() fills the stack below the caller with a pattern, then
  * the library call runs in that area, then stack_check() finds the lowest word
@@ -200,6 +208,33 @@ static int run_static(const type_t *t, const uint8_t *enc, uint64_t len, const u
     return ok;
 }
 
+/* An encoding the spec rejects: both deserialize functions return the expected refusal. */
+static int run_reject(const type_t *t, const uint8_t *enc, uint64_t len, uint64_t want, const char **why) {
+    uint64_t off = 32, ssize = off + len + 7;
+    uint8_t *ser = buffer(ssize);
+    wr64(ser, ssize);
+    wr64(ser + 8, off);
+    wr64(ser + 16, len);
+    memcpy(ser + off, enc, (size_t)len);
+    uint8_t *scr = scratch_for(t);
+    uint64_t vsize = t->ssz_size ? t->mem_size : 64;
+    uint8_t *value = buffer(vsize);
+    if (t->ssz_size == 0) wr64(value, vsize);
+    uint64_t size = 0, st;
+    int ok = 0;
+    if ((st = CALL(F_DE_SIZE, ssz_deserialize_size(t->desc, ser, scr, &size))) != want)
+        *why = status_differs("deserialize_size", st, want);
+    else if ((st = CALL(F_DE, ssz_deserialize(t->desc, ser, scr, value))) != want)
+        *why = status_differs("deserialize", st, want);
+    else if (!guard_ok(value, vsize) || !guard_ok(scr, t->scratch_size) || !guard_ok(ser, ssize))
+        *why = "out of bounds write";
+    else ok = 1;
+    free(ser);
+    free(scr);
+    free(value);
+    return ok;
+}
+
 static int run_proof(const type_t *t, const uint8_t *enc, uint64_t len, uint64_t gindex,
                      const uint8_t *branch, uint64_t nodes, const char **why) {
     uint64_t vsize = 0;
@@ -222,8 +257,33 @@ static int run_proof(const type_t *t, const uint8_t *enc, uint64_t len, uint64_t
     return ok;
 }
 
-static int run_gindex(const type_t *t, const uint8_t *steps, uint64_t count, uint64_t expected,
-                      const char **why) {
+/* A generated proof case: build_proof returns the expected status, and on status 0 the branch. */
+static int run_proof_outcome(const type_t *t, const uint8_t *enc, uint64_t len, uint64_t gindex,
+                             uint64_t want_status, const uint8_t *branch, uint64_t nodes, const char **why) {
+    uint64_t vsize = 0;
+    uint8_t *value = decode(t, enc, len, &vsize, why);
+    if (!value) return 0;
+    uint8_t *scr = scratch_for(t);
+    uint64_t room = want_status ? 64 : nodes;
+    uint64_t bsize = 24 + 32 * room;
+    uint8_t *out = buffer(bsize);
+    wr64(out, bsize);
+    uint64_t g = gindex;
+    int ok = 0;
+    uint64_t st = CALL(F_PROOF, ssz_build_proof(t->desc, value, &g, scr, out));
+    if (st != want_status) *why = status_differs("build_proof", st, want_status);
+    else if (st == 0 && (rd64(out + 8) != 24 || rd64(out + 16) != nodes)) *why = "build_proof count";
+    else if (st == 0 && memcmp(out + 24, branch, (size_t)(32 * nodes))) *why = "build_proof nodes";
+    else if (!guard_ok(out, bsize) || !guard_ok(scr, t->scratch_size)) *why = "out of bounds write";
+    else ok = 1;
+    free(out);
+    free(scr);
+    free(value);
+    return ok;
+}
+
+static int run_gindex(const type_t *t, const uint8_t *steps, uint64_t count, uint64_t want_status,
+                      uint64_t expected, const char **why) {
     uint64_t psize = 24 + 8 * count;
     uint8_t *path = buffer(psize);
     wr64(path, psize);
@@ -233,8 +293,9 @@ static int run_gindex(const type_t *t, const uint8_t *steps, uint64_t count, uin
     uint8_t got[8 + GUARD];
     memset(got, FILL, sizeof got);
     int ok = 0;
-    if (CALL(F_GINDEX, ssz_get_generalized_index(t->desc, path, got)) != 0) *why = "get_generalized_index status";
-    else if (rd64(got) != expected) *why = "get_generalized_index value";
+    uint64_t st = CALL(F_GINDEX, ssz_get_generalized_index(t->desc, path, got));
+    if (st != want_status) *why = status_differs("get_generalized_index", st, want_status);
+    else if (st == 0 && rd64(got) != expected) *why = "get_generalized_index value";
     else if (!guard_ok(got, 8)) *why = "out of bounds write";
     else ok = 1;
     free(path);
@@ -255,7 +316,7 @@ static int run_verify(const uint8_t *leaf, uint64_t gindex, const uint8_t *root,
     memcpy(branch + 24, nodes, (size_t)(32 * count));
     int ok = 0;
     uint64_t st = CALL(F_VERIFY, ssz_verify_merkle_proof(l, branch, g, r, valid));
-    if (st != want_status) *why = "verify_merkle_proof status";
+    if (st != want_status) *why = status_differs("verify_merkle_proof", st, want_status);
     else if (st == 0 && rd64(valid) != want_valid) *why = "verify_merkle_proof valid";
     else if (!guard_ok(valid, 8)) *why = "out of bounds write";
     else ok = 1;
@@ -330,7 +391,19 @@ static int run_file(const char *dir, const char *name) {
         } else if (kind == 3) {
             uint64_t count = take64(&c);
             const uint8_t *steps = take(&c, 8 * count);
-            ok = run_gindex(t, steps, count, take64(&c), &why);
+            uint64_t want_status = take64(&c);
+            ok = run_gindex(t, steps, count, want_status, take64(&c), &why);
+        } else if (kind == 6) {
+            uint64_t elen = take64(&c);
+            const uint8_t *enc = take(&c, elen);
+            uint64_t gindex = take64(&c);
+            uint64_t want_status = take64(&c);
+            uint64_t nodes = take64(&c);
+            ok = run_proof_outcome(t, enc, elen, gindex, want_status, take(&c, 32 * nodes), nodes, &why);
+        } else if (kind == 5) {
+            uint64_t elen = take64(&c);
+            const uint8_t *enc = take(&c, elen);
+            ok = run_reject(t, enc, elen, take64(&c), &why);
         } else if (kind == 4) {
             const uint8_t *leaf = take(&c, 32);
             uint64_t gindex = take64(&c);

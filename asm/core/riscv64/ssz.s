@@ -1420,6 +1420,7 @@ FUNCTION ssz_get_generalized_index
     li      t5, 0
     li      a0, 1
     li      a3, 0
+    li      s2, 0                          # 1 once the index needs more than 64 bits
 1:  bgeu    t5, t4, 90f
     slli    s1, t5, 3
     add     s1, t3, s1
@@ -1439,7 +1440,8 @@ FUNCTION ssz_get_generalized_index
     bne     a5, s1, 82f
 2:  addi    s1, t5, 1
     bne     s1, t4, 83f
-    bltz    a0, 86f
+    srli    s1, a0, 63
+    or      s2, s2, s1
     slli    a0, a0, 1
     addi    a0, a0, 1
     j       90f
@@ -1504,19 +1506,23 @@ FUNCTION ssz_get_generalized_index
     beq     a5, s1, 51f
     li      s1, SSZ_KIND_BIT_LIST
     bne     a5, s1, 52f
-51: bltz    a0, 86f
+51: srli    s1, a0, 63
+    or      s2, s2, s1
     slli    a0, a0, 1
 52: beqz    a6, 53f
     li      s1, 64
     sub     s1, s1, a6
     srl     s1, a0, s1
-    bnez    s1, 86f
+    snez    s1, s1
+    or      s2, s2, s1
     sll     a0, a0, a6
     or      a0, a0, t6
 53: mv      t2, a1
     addi    t5, t5, 1
     j       1b
-90: sd      a0, 0(a2)
+90: # the 64 bit limit applies only to a path that is otherwise valid
+    bnez    s2, 86f
+    sd      a0, 0(a2)
     li      a0, SSZ_OK
     j       99f
 81: li      a0, SSZ_NO_PARTS
@@ -1550,6 +1556,8 @@ FUNCTION ssz_build_proof
     ROOT_NODE
     mv      s7, s2
     beqz    s6, 82f
+    li      t0, 1
+    beq     s6, t0, 81f
     ld      t0, 0(s5)
     ld      t1, SSZ_NODE_SCRATCH(s7)
     bltu    t0, t1, 80f
@@ -1695,6 +1703,8 @@ FUNCTION ssz_build_proof
 79: li      a0, SSZ_OK
     j       90f
 80: li      a0, SSZ_BUFFER_TOO_SMALL
+    j       90f
+81: li      a0, SSZ_ROOT_HAS_NO_BRANCH
     j       90f
 82: li      a0, SSZ_NOT_A_GINDEX
     j       90f

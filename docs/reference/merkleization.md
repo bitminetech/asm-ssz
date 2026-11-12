@@ -488,7 +488,7 @@ Work area for one level.
 
 ## Test vectors
 
-- The roots of the `ssz_static` cases in [serialization.md](serialization.md#test-vectors).
+- The roots of the `ssz_static` cases, the ssz-specs valid cases and the generated accepted cases in [serialization.md](serialization.md#test-vectors).
 
 ## Results
 

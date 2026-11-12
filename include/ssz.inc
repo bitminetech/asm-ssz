@@ -46,7 +46,7 @@
 /* Decode refusal for a top-level byte vector of the wrong length (v0.1.0 ValueFault COUNT). */
 .set SSZ_COUNT, 28
 
-/* Verify refusals. Each one is the v0.1.0 ValueFault of the same name. Index 0 gives SSZ_NOT_A_GINDEX. */
+/* Index and branch refusals of ssz_build_proof and ssz_verify_merkle_proof. Each one is the v0.1.0 ValueFault of the same name. */
 .set SSZ_ROOT_HAS_NO_BRANCH, 29
 .set SSZ_BRANCH_LENGTH, 30
 
