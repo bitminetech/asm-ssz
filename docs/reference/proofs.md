@@ -2,11 +2,13 @@
 
 ## Contents
 
-- Function [`ssz_get_generalized_index`](#function-ssz_get_generalized_index): finds the tree node that a path names.
-- Function [`ssz_build_proof`](#function-ssz_build_proof): builds the Merkle branch for one tree node.
-- Type [`Path`](#type-path): a list of steps from the root of a type.
-- Type [`GeneralizedIndex`](#type-generalizedindex): the position of one tree node.
-- Type [`Branch`](#type-branch): a list of tree nodes.
+- Functions
+  - [`ssz_get_generalized_index`](#function-ssz_get_generalized_index): finds the tree node that a path names.
+  - [`ssz_build_proof`](#function-ssz_build_proof): builds the Merkle branch for one tree node.
+- Types
+  - [`Path`](#type-path): a list of steps from the root of a type.
+  - [`GeneralizedIndex`](#type-generalizedindex): the position of one tree node.
+  - [`Branch`](#type-branch): a list of tree nodes.
 
 ## Spec
 

@@ -2,7 +2,7 @@
 
 SimpleSerialize (SSZ) for Ethereum, in assembly.
 
-Standard: [asm-standard@dc3b2a7](https://github.com/bitminetech/asm-standard/blob/dc3b2a75755f502828c0d6060ff655a9dcfea20a/ARCHITECTURE.md)
+Standard: [asm-standard@fb1db5b](https://github.com/bitminetech/asm-standard/blob/fb1db5bc2a1b722a12acc4f37323ddc268c91d7f/ARCHITECTURE.md)
 
 ## Reference
 

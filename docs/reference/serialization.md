@@ -2,22 +2,24 @@
 
 ## Contents
 
-- Function [`ssz_serialize`](#function-ssz_serialize): writes the SSZ encoding of a value.
-- Function [`ssz_serialize_size`](#function-ssz_serialize_size): gives the buffer size that `ssz_serialize` needs.
-- Function [`ssz_deserialize`](#function-ssz_deserialize): reads an SSZ encoding into a value.
-- Function [`ssz_deserialize_size`](#function-ssz_deserialize_size): gives the buffer size that `ssz_deserialize` needs.
-- Function [`ssz_l0_ser`](#function-ssz_l0_ser): appends the encoding of one value. Internal.
-- Function [`ssz_l0_de`](#function-ssz_l0_de): decodes one value. Internal.
-- Type [`Value`](#type-value): an SSZ value in memory.
-- Type [`PartRef`](#type-partref): where the entries of a variable size field are.
-- Type [`TypeDescriptor`](#type-typedescriptor): describes one SSZ type.
-- Type [`TypeNode`](#type-typenode): one type inside a descriptor.
-- Type [`TypeField`](#type-typefield): one container field inside a descriptor.
-- Type [`ByteList`](#type-bytelist): a byte string with a header.
-- Type [`Scratch`](#type-scratch): workspace for one call.
-- Type [`Ctx`](#type-ctx): what every internal function reads. Internal.
-- Type [`Slot`](#type-slot): where one value is. Internal.
-- Type [`Cursor`](#type-cursor): where the next byte goes or comes from. Internal.
+- Functions
+  - [`ssz_serialize`](#function-ssz_serialize): writes the SSZ encoding of a value.
+  - [`ssz_serialize_size`](#function-ssz_serialize_size): gives the buffer size that `ssz_serialize` needs.
+  - [`ssz_deserialize`](#function-ssz_deserialize): reads an SSZ encoding into a value.
+  - [`ssz_deserialize_size`](#function-ssz_deserialize_size): gives the buffer size that `ssz_deserialize` needs.
+  - [`ssz_l0_ser`](#function-ssz_l0_ser): appends the encoding of one value. Internal.
+  - [`ssz_l0_de`](#function-ssz_l0_de): decodes one value. Internal.
+- Types
+  - [`Value`](#type-value): an SSZ value in memory.
+  - [`PartRef`](#type-partref): where the entries of a variable size field are.
+  - [`TypeDescriptor`](#type-typedescriptor): describes one SSZ type.
+  - [`TypeNode`](#type-typenode): one type inside a descriptor.
+  - [`TypeField`](#type-typefield): one container field inside a descriptor.
+  - [`ByteList`](#type-bytelist): a byte string with a header.
+  - [`Scratch`](#type-scratch): workspace for one call.
+  - [`Ctx`](#type-ctx): what every internal function reads. Internal.
+  - [`Slot`](#type-slot): where one value is. Internal.
+  - [`Cursor`](#type-cursor): where the next byte goes or comes from. Internal.
 
 ## Spec
 
