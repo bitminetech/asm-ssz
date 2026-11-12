@@ -2,19 +2,22 @@
 
 ## Contents
 
-- Functions
-  - [`ssz_hash_tree_root`](#function-ssz_hash_tree_root): computes the hash tree root of a value.
-  - [`ssz_l0_hash`](#function-ssz_l0_hash): hashes two tree nodes into their parent. Internal.
-  - [`ssz_l0_level`](#function-ssz_l0_level): describes the leaves of one value. Internal.
-  - [`ssz_l0_child`](#function-ssz_l0_child): describes the leaves of the value under one leaf. Internal.
-  - [`ssz_l0_leaf`](#function-ssz_l0_leaf): gives one leaf. Internal.
-  - [`ssz_l0_root`](#function-ssz_l0_root): gives the hash tree root of one value. Internal.
-  - [`ssz_l0_merkleize`](#function-ssz_l0_merkleize): gives the root of one subtree. Internal.
-- Types
-  - [`Root`](#type-root): a Merkle root or tree node.
-  - [`Level`](#type-level): the leaves of one value. Internal.
-  - [`Range`](#type-range): one subtree of a level. Internal.
-  - [`Work`](#type-work): work area for one level. Internal.
+### Functions
+
+- [`ssz_hash_tree_root`](#function-ssz_hash_tree_root): computes the hash tree root of a value.
+- [`ssz_l0_hash`](#function-ssz_l0_hash): hashes two tree nodes into their parent. Internal.
+- [`ssz_l0_level`](#function-ssz_l0_level): describes the leaves of one value. Internal.
+- [`ssz_l0_child`](#function-ssz_l0_child): describes the leaves of the value under one leaf. Internal.
+- [`ssz_l0_leaf`](#function-ssz_l0_leaf): gives one leaf. Internal.
+- [`ssz_l0_root`](#function-ssz_l0_root): gives the hash tree root of one value. Internal.
+- [`ssz_l0_merkleize`](#function-ssz_l0_merkleize): gives the root of one subtree. Internal.
+
+### Types
+
+- [`Root`](#type-root): a Merkle root or tree node.
+- [`Level`](#type-level): the leaves of one value. Internal.
+- [`Range`](#type-range): one subtree of a level. Internal.
+- [`Work`](#type-work): work area for one level. Internal.
 
 ## Spec
 
