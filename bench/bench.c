@@ -156,7 +156,12 @@ static void cpu_name(char *out, size_t size) {
     else if (*isa) snprintf(out, size, "RISC-V %s", isa);
 #endif
     for (char *p = out; *p; p++)
-        if (*p == '\n' || *p == '\r') *p = ' ';
+        if (*p == '\n' || *p == '\r' || *p == '\t') *p = ' ';
+    /* Some OSes pad the name with spaces: drop them at both ends. */
+    size_t end = strlen(out), lead = strspn(out, " ");
+    while (end > lead && out[end - 1] == ' ') end--;
+    memmove(out, out + lead, end - lead);
+    out[end - lead] = 0;
 }
 
 /* ---------------------------------------------------------------- Vector files */
