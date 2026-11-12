@@ -114,7 +114,7 @@
     mov     %rbx, %rdi
     mov     %rsp, %rdx
     mov     %r13, %rcx
-    call    ssz_l0_de
+    call    ssz_decode_value
     test    %rax, %rax
     jnz     280f
 .endm
@@ -147,7 +147,7 @@
     mov     %rbx, %rdi
     mov     %rsp, %rdx
     mov     %r13, %rcx
-    call    ssz_l0_ser
+    call    ssz_encode_value
 .endm
 
 /* L2 entry: r12 = root TypeNode of the descriptor in rdi. */
@@ -192,11 +192,11 @@
 /* ---------------------------------------------------------------- Serialize */
 
 /*
- * ssz_l0_ser(ctx, node, slot, cursor): append the SSZ encoding of the value in
+ * ssz_encode_value(ctx, node, slot, cursor): append the SSZ encoding of the value in
  * slot to cursor.out. rbx ctx, r12 node, r13 cursor, r14 p, r15 b, rbp element
  * or field. Locals: child slot 0, kind 32, count 40, base 48, index 56, start 64.
  */
-LOCAL_FUNCTION ssz_l0_ser
+LOCAL_FUNCTION ssz_encode_value
     ENTER   80
     mov     %rdi, %rbx
     mov     %rsi, %r12
@@ -382,7 +382,7 @@ LOCAL_FUNCTION ssz_l0_ser
 
 90: xor     %eax, %eax
     LEAVE   80
-END_FUNCTION ssz_l0_ser
+END_FUNCTION ssz_encode_value
 
 /* ssz_serialize_size(type, value, scratch, size). Locals: slot 0, cursor 32. */
 FUNCTION ssz_serialize_size
@@ -401,7 +401,7 @@ FUNCTION ssz_serialize_size
     mov     %r12, %rsi
     mov     %rsp, %rdx
     lea     32(%rsp), %rcx
-    call    ssz_l0_ser
+    call    ssz_encode_value
     mov     32(%rsp), %rax
     add     $SSZ_BYTES_FIXED, %rax
     mov     %rax, (%r15)
@@ -429,7 +429,7 @@ FUNCTION ssz_serialize
     mov     %r12, %rsi
     mov     %rsp, %rdx
     lea     32(%rsp), %rcx
-    call    ssz_l0_ser
+    call    ssz_encode_value
     mov     32(%rsp), %r13
     lea     SSZ_BYTES_FIXED(%r13), %rax
     cmp     SSZ_BYTES_SIZE(%r15), %rax
@@ -444,7 +444,7 @@ FUNCTION ssz_serialize
     mov     %r12, %rsi
     mov     %rsp, %rdx
     lea     32(%rsp), %rcx
-    call    ssz_l0_ser
+    call    ssz_encode_value
     xor     %eax, %eax
     jmp     90f
 80: mov     $SSZ_BUFFER_TOO_SMALL, %eax
@@ -454,13 +454,13 @@ END_FUNCTION ssz_serialize
 /* ---------------------------------------------------------------- Deserialize */
 
 /*
- * ssz_l0_de(ctx, node, slot, cursor): decode slot.scope bytes at cursor.pos into
+ * ssz_decode_value(ctx, node, slot, cursor): decode slot.scope bytes at cursor.pos into
  * the value in slot, as v0.1.0 deserialize does. On a refusal the cursor is
  * restored. rbx ctx, r12 node, r13 cursor, r14 p, r15 b, rbp scope.
  * Locals: child slot 0, cursor at entry 32 and 40, value start 48, form 56,
  * kind 64, then 72, 80, 88, 96, 104 for each case.
  */
-LOCAL_FUNCTION ssz_l0_de
+LOCAL_FUNCTION ssz_decode_value
     ENTER   112
     mov     %rdi, %rbx
     mov     %rsi, %r12
@@ -879,7 +879,7 @@ LOCAL_FUNCTION ssz_l0_de
     mov     40(%rsp), %rcx
     mov     %rcx, SSZ_CUR_NEXT(%r13)
 299: LEAVE  112
-END_FUNCTION ssz_l0_de
+END_FUNCTION ssz_decode_value
 
 /*
  * L2 deserialize, decode_bytes rules for the top value. Uses rbx ctx, r12 root
@@ -892,7 +892,7 @@ END_FUNCTION ssz_l0_de
     mov     %r12, %rsi
     mov     %rsp, %rdx
     lea     32(%rsp), %rcx
-    call    ssz_l0_de
+    call    ssz_decode_value
 .endm
 
 .macro DE_TOP
@@ -1006,8 +1006,8 @@ END_FUNCTION ssz_deserialize
 
 /* ---------------------------------------------------------------- Merkleization */
 
-/* ssz_l0_hash(ctx, left, right, out): out = SHA-256(left || right), 32 bytes each. */
-LOCAL_FUNCTION ssz_l0_hash
+/* ssz_hash_pair(ctx, left, right, out): out = SHA-256(left || right), 32 bytes each. */
+LOCAL_FUNCTION ssz_hash_pair
     ENTER   0
     mov     SSZ_CTX_SHA(%rdi), %rbx
     lea     SSZ_BYTES_FIXED(%rbx), %rax
@@ -1019,10 +1019,10 @@ LOCAL_FUNCTION ssz_l0_hash
     CALL_EXTERN crypto_sha256
     xor     %eax, %eax
     LEAVE   0
-END_FUNCTION ssz_l0_hash
+END_FUNCTION ssz_hash_pair
 
-/* ssz_l0_level(ctx, node, slot, level): describe the leaves of the value in slot. A leaf. */
-LOCAL_FUNCTION ssz_l0_level
+/* ssz_value_level(ctx, node, slot, level): describe the leaves of the value in slot. A leaf. */
+LOCAL_FUNCTION ssz_value_level
     UNWIND_END_PROLOGUE
     mov     SSZ_SLOT_P(%rdx), %r8
     mov     SSZ_SLOT_B(%rdx), %r9
@@ -1123,10 +1123,10 @@ LOCAL_FUNCTION ssz_l0_level
     mov     %rax, SSZ_LEVEL_COUNT(%rcx)
 90: xor     %eax, %eax
     ret
-END_FUNCTION ssz_l0_level
+END_FUNCTION ssz_value_level
 
-/* ssz_l0_child(ctx, level, index, child): describe the leaves of leaf index of level. */
-LOCAL_FUNCTION ssz_l0_child
+/* ssz_child_level(ctx, level, index, child): describe the leaves of leaf index of level. */
+LOCAL_FUNCTION ssz_child_level
     ENTER   32
     mov     %rdi, %rbx
     mov     %rsi, %r12
@@ -1180,13 +1180,13 @@ LOCAL_FUNCTION ssz_l0_child
 9:  mov     %rbx, %rdi
     mov     %rsp, %rdx
     mov     %r14, %rcx
-    call    ssz_l0_level
+    call    ssz_value_level
     xor     %eax, %eax
     LEAVE   32
-END_FUNCTION ssz_l0_child
+END_FUNCTION ssz_child_level
 
-/* ssz_l0_leaf(ctx, level, index, work, out): out = leaf index of level. */
-LOCAL_FUNCTION ssz_l0_leaf
+/* ssz_level_leaf(ctx, level, index, work, out): out = leaf index of level. */
+LOCAL_FUNCTION ssz_level_leaf
     ENTER   0
     mov     %rdi, %rbx
     mov     %rsi, %r12
@@ -1218,7 +1218,7 @@ LOCAL_FUNCTION ssz_l0_leaf
     mov     %r12, %rsi
     mov     %r13, %rdx
     mov     %rbp, %rcx
-    call    ssz_l0_child
+    call    ssz_child_level
     lea     SSZ_LEVEL_SIZE(%rbp), %rdx
     mov     (%r14), %rax
     sub     $(8 + SSZ_LEVEL_SIZE), %rax
@@ -1226,13 +1226,13 @@ LOCAL_FUNCTION ssz_l0_leaf
     mov     %rbx, %rdi
     mov     %rbp, %rsi
     mov     %r15, %rcx
-    call    ssz_l0_root
+    call    ssz_level_root
 90: xor     %eax, %eax
     LEAVE   0
-END_FUNCTION ssz_l0_leaf
+END_FUNCTION ssz_level_leaf
 
-/* ssz_l0_root(ctx, level, work, out): out = hash tree root of the value of level. Locals: range 0, length 16. */
-LOCAL_FUNCTION ssz_l0_root
+/* ssz_level_root(ctx, level, work, out): out = hash tree root of the value of level. Locals: range 0, length 16. */
+LOCAL_FUNCTION ssz_level_root
     ENTER   48
     mov     %rdi, %rbx
     mov     %rsi, %r12
@@ -1246,7 +1246,7 @@ LOCAL_FUNCTION ssz_l0_root
     mov     %rsp, %rdx
     mov     %r13, %rcx
     mov     %r14, %r8
-    call    ssz_l0_merkleize
+    call    ssz_subtree_root
     cmpq    $0, SSZ_LEVEL_MIXIN(%r12)
     je      90f
     /* mix in the length as a 32-byte little-endian number */
@@ -1259,19 +1259,19 @@ LOCAL_FUNCTION ssz_l0_root
     mov     %r14, %rsi
     lea     16(%rsp), %rdx
     mov     %r14, %rcx
-    call    ssz_l0_hash
+    call    ssz_hash_pair
 90: xor     %eax, %eax
     LEAVE   48
-END_FUNCTION ssz_l0_root
+END_FUNCTION ssz_level_root
 
 /*
- * ssz_l0_merkleize(ctx, level, range, work, out): out = root of the subtree of
+ * ssz_subtree_root(ctx, level, range, work, out): out = root of the subtree of
  * depth range.depth over leaves range.lo onward, padded with zero trees.
  * work: size, frontier of depth + 1 nodes, the node h, then the leaf work.
  * rbx ctx, r12 level, r13 work, r14 frontier, r15 h, rbp k or j.
  * Locals: lo 0, depth 8, out 16, m 24, index 32, a node is pending 40, leaf work 48, j 56.
  */
-LOCAL_FUNCTION ssz_l0_merkleize
+LOCAL_FUNCTION ssz_subtree_root
     ENTER   64
     mov     %rdi, %rbx
     mov     %rsi, %r12
@@ -1326,7 +1326,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     lea     32(%rsp), %rdx
     mov     48(%rsp), %rcx
     mov     %r15, %r8
-    call    ssz_l0_leaf
+    call    ssz_level_leaf
     movq    $0, 56(%rsp)
 21: mov     56(%rsp), %rcx
     mov     %rbp, %rax
@@ -1338,7 +1338,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     lea     (%r14,%rcx), %rsi
     mov     %r15, %rdx
     mov     %r15, %rcx
-    call    ssz_l0_hash
+    call    ssz_hash_pair
     incq    56(%rsp)
     jmp     21b
 22: mov     56(%rsp), %rcx
@@ -1370,7 +1370,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
 42: mov     %r15, %rdx
 43: mov     %rbx, %rdi
     mov     %r15, %rcx
-    call    ssz_l0_hash
+    call    ssz_hash_pair
     jmp     46f
 45: cmpq    $0, 40(%rsp)
     je      46f
@@ -1380,7 +1380,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     shl     $5, %rdx
     add     SSZ_CTX_ZERO(%rbx), %rdx
     mov     %r15, %rcx
-    call    ssz_l0_hash
+    call    ssz_hash_pair
 46: inc     %rbp
     jmp     41b
 50: mov     16(%rsp), %rdx
@@ -1394,7 +1394,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
 51: COPY32  %rdx, %r15
 90: xor     %eax, %eax
     LEAVE   64
-END_FUNCTION ssz_l0_merkleize
+END_FUNCTION ssz_subtree_root
 
 /* ssz_hash_tree_root(type, value, scratch, root). Locals: slot 0. */
 FUNCTION ssz_hash_tree_root
@@ -1413,7 +1413,7 @@ FUNCTION ssz_hash_tree_root
     mov     %r12, %rsi
     mov     %rsp, %rdx
     mov     %r13, %rcx
-    call    ssz_l0_level
+    call    ssz_value_level
     lea     SSZ_SCR_WORK(%rbp), %rdx
     mov     (%rbp), %rax
     sub     $SSZ_SCR_WORK, %rax
@@ -1421,7 +1421,7 @@ FUNCTION ssz_hash_tree_root
     mov     %rbx, %rdi
     mov     %r13, %rsi
     mov     %r15, %rcx
-    call    ssz_l0_root
+    call    ssz_level_root
     xor     %eax, %eax
     jmp     90f
 80: mov     $SSZ_BUFFER_TOO_SMALL, %eax
@@ -1609,7 +1609,7 @@ FUNCTION ssz_build_proof
     mov     %rbx, %rdi
     mov     %rsp, %rdx
     mov     %r12, %rcx
-    call    ssz_l0_level
+    call    ssz_value_level
     mov     112(%rsp), %rax
     lea     SSZ_SCR_WORK(%rax), %r13
     mov     (%rax), %rcx
@@ -1655,7 +1655,7 @@ FUNCTION ssz_build_proof
     mov     %r12, %rsi
     lea     32(%rsp), %rdx
     mov     %r13, %rcx
-    call    ssz_l0_merkleize
+    call    ssz_subtree_root
     jmp     70f
 35: /* down this level's tree */
     mov     %rbp, %rax
@@ -1699,7 +1699,7 @@ FUNCTION ssz_build_proof
     mov     %r12, %rsi
     lea     32(%rsp), %rdx
     mov     %r13, %rcx
-    call    ssz_l0_merkleize
+    call    ssz_subtree_root
     jmp     36b
 38: mov     80(%rsp), %rax
     cmp     88(%rsp), %rax
@@ -1715,7 +1715,7 @@ FUNCTION ssz_build_proof
     mov     %r12, %rsi
     lea     48(%rsp), %rdx
     lea     8(%r13), %rcx
-    call    ssz_l0_child
+    call    ssz_child_level
     lea     8(%r13), %r12
     lea     SSZ_LEVEL_SIZE(%r12), %rax
     mov     (%r13), %rcx
@@ -1749,6 +1749,79 @@ FUNCTION ssz_build_proof
 85: mov     $SSZ_PATH_INTO_GAP, %eax
 99: LEAVE   128
 END_FUNCTION ssz_build_proof
+
+/*
+ * ssz_verify_merkle_proof(leaf, branch, gindex, root, valid). Rebuilds the root
+ * from leaf and branch, as v0.1.0 calculate_merkle_root does, and compares it.
+ * rbx next branch node, rbp node count, r12 gindex, r13 root, r14 valid,
+ * r15 level. Locals: the SHA-256 input ByteList at rsp + 0 (88 bytes), the
+ * node at rsp + 88.
+ */
+FUNCTION ssz_verify_merkle_proof
+    ENTER   128
+    mov     (%rdx), %r12
+    test    %r12, %r12
+    jz      81f
+    /* depth = the bit length of gindex - 1 */
+    bsr     %r12, %rax
+    test    %rax, %rax
+    jz      82f
+    mov     SSZ_BYTES_COUNT(%rsi), %rbp
+    cmp     %rax, %rbp
+    jne     83f
+    mov     SSZ_BYTES_OFFSET(%rsi), %rbx
+    add     %rsi, %rbx
+    mov     %rcx, %r13
+    mov     %r8, %r14
+    lea     88(%rsp), %rax
+    COPY32  %rax, %rdi
+    movq    $(88), SSZ_BYTES_SIZE(%rsp)
+    movq    $(SSZ_BYTES_FIXED), SSZ_BYTES_OFFSET(%rsp)
+    movq    $(64), SSZ_BYTES_COUNT(%rsp)
+    xor     %r15d, %r15d
+1:  cmp     %rbp, %r15
+    jae     5f
+    lea     SSZ_BYTES_FIXED(%rsp), %rax
+    lea     (SSZ_BYTES_FIXED + 32)(%rsp), %rdx
+    lea     88(%rsp), %rsi
+    bt      %r15, %r12
+    jnc     2f
+    /* bit set: the branch node is on the left */
+    COPY32  %rax, %rbx
+    COPY32  %rdx, %rsi
+    jmp     3f
+2:  COPY32  %rax, %rsi
+    COPY32  %rdx, %rbx
+3:  mov     %rsp, %rdi
+    lea     88(%rsp), %rsi
+    CALL_EXTERN crypto_sha256
+    add     $(32), %rbx
+    inc     %r15
+    jmp     1b
+5:  /* valid = 1 when the node equals root */
+    mov     88(%rsp), %rax
+    xor     (%r13), %rax
+    mov     96(%rsp), %rcx
+    xor     8(%r13), %rcx
+    or      %rcx, %rax
+    mov     104(%rsp), %rcx
+    xor     16(%r13), %rcx
+    or      %rcx, %rax
+    mov     112(%rsp), %rcx
+    xor     24(%r13), %rcx
+    or      %rcx, %rax
+    setz    %al
+    movzbl  %al, %eax
+    mov     %rax, (%r14)
+    xor     %eax, %eax
+    jmp     90f
+81: mov     $(SSZ_NOT_A_GINDEX), %eax
+    jmp     90f
+82: mov     $(SSZ_ROOT_HAS_NO_BRANCH), %eax
+    jmp     90f
+83: mov     $(SSZ_BRANCH_LENGTH), %eax
+90: LEAVE   128
+END_FUNCTION ssz_verify_merkle_proof
 
 /* ---------------------------------------------------------------- Constants */
 

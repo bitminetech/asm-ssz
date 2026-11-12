@@ -122,7 +122,7 @@
     mov     x1, \node
     add     x2, sp, #96
     mov     x3, x21
-    bl      ssz_l0_de
+    bl      ssz_decode_value
     cbnz    x0, 280f
 .endm
 
@@ -160,7 +160,7 @@
     mov     x1, \node
     add     x2, sp, #96
     mov     x3, x21
-    bl      ssz_l0_ser
+    bl      ssz_encode_value
 .endm
 
 /* L2 entry: x20 = root TypeNode of the descriptor in x0. Uses x9, x10. */
@@ -198,11 +198,11 @@
 /* ---------------------------------------------------------------- Serialize */
 
 /*
- * ssz_l0_ser(ctx, node, slot, cursor): append the SSZ encoding of the value in
+ * ssz_encode_value(ctx, node, slot, cursor): append the SSZ encoding of the value in
  * slot to cursor.out. Locals: child slot at sp + 96.
  * x19 ctx, x20 node, x21 cursor, x22 p, x23 b, x24 kind.
  */
-LOCAL_FUNCTION ssz_l0_ser
+LOCAL_FUNCTION ssz_encode_value
     ENTER   48
     mov     x19, x0
     mov     x20, x1
@@ -358,7 +358,7 @@ LOCAL_FUNCTION ssz_l0_ser
 
 90: mov     x0, #SSZ_OK
     LEAVE   48
-END_FUNCTION ssz_l0_ser
+END_FUNCTION ssz_encode_value
 
 /* ssz_serialize_size(type, value, scratch, size). Locals: slot at sp + 96, cursor at sp + 128. */
 FUNCTION ssz_serialize_size
@@ -384,7 +384,7 @@ FUNCTION ssz_serialize_size
     mov     x1, x20
     add     x2, sp, #96
     add     x3, sp, #128
-    bl      ssz_l0_ser
+    bl      ssz_encode_value
     ldr     x9, [sp, #128]
     add     x9, x9, #SSZ_BYTES_FIXED
     str     x9, [x22]
@@ -419,7 +419,7 @@ FUNCTION ssz_serialize
     mov     x1, x20
     add     x2, sp, #96
     add     x3, sp, #128
-    bl      ssz_l0_ser
+    bl      ssz_encode_value
     ldr     x24, [sp, #128]
     ldr     x9, [x22, #SSZ_BYTES_SIZE]
     add     x10, x24, #SSZ_BYTES_FIXED
@@ -437,7 +437,7 @@ FUNCTION ssz_serialize
     mov     x1, x20
     add     x2, sp, #96
     add     x3, sp, #128
-    bl      ssz_l0_ser
+    bl      ssz_encode_value
     mov     x0, #SSZ_OK
     b       90f
 80: mov     x0, #SSZ_BUFFER_TOO_SMALL
@@ -447,13 +447,13 @@ END_FUNCTION ssz_serialize
 /* ---------------------------------------------------------------- Deserialize */
 
 /*
- * ssz_l0_de(ctx, node, slot, cursor): decode slot.scope bytes at cursor.pos into
+ * ssz_decode_value(ctx, node, slot, cursor): decode slot.scope bytes at cursor.pos into
  * the value in slot, as v0.1.0 deserialize does. On a refusal the cursor is
  * restored. Locals: child slot sp + 96, cursor at entry sp + 128, value start
  * sp + 144, form sp + 152, spare sp + 160 to sp + 192.
  * x19 ctx, x20 node, x21 cursor, x22 p, x23 b, x24 kind, x25 scope.
  */
-LOCAL_FUNCTION ssz_l0_de
+LOCAL_FUNCTION ssz_decode_value
     ENTER   96
     mov     x19, x0
     mov     x20, x1
@@ -827,7 +827,7 @@ LOCAL_FUNCTION ssz_l0_de
     ldp     x9, x10, [sp, #128]
     stp     x9, x10, [x21]
 299: LEAVE  96
-END_FUNCTION ssz_l0_de
+END_FUNCTION ssz_decode_value
 
 /*
  * L2 deserialize, decode_bytes rules for the top value. Uses x19 ctx, x20 root
@@ -868,7 +868,7 @@ END_FUNCTION ssz_l0_de
     mov     x1, x20
     add     x2, sp, #96
     add     x3, sp, #128
-    bl      ssz_l0_de
+    bl      ssz_decode_value
     cbnz    x0, 89f
     ldr     x26, [x20, #SSZ_NODE_MEM_SIZE]
     b       87f
@@ -878,7 +878,7 @@ END_FUNCTION ssz_l0_de
     mov     x1, x20
     add     x2, sp, #96
     add     x3, sp, #128
-    bl      ssz_l0_de
+    bl      ssz_decode_value
     cbnz    x0, 89f
     ldr     x26, [sp, #(128 + SSZ_CUR_NEXT)]
     sub     x26, x26, x25
@@ -950,8 +950,8 @@ END_FUNCTION ssz_deserialize
 
 /* ---------------------------------------------------------------- Merkleization */
 
-/* ssz_l0_hash(ctx, left, right, out): out = SHA-256(left || right), 32 bytes each. */
-LOCAL_FUNCTION ssz_l0_hash
+/* ssz_hash_pair(ctx, left, right, out): out = SHA-256(left || right), 32 bytes each. */
+LOCAL_FUNCTION ssz_hash_pair
     ENTER   0
     ldr     x9, [x0, #SSZ_CTX_SHA]
     add     x10, x9, #SSZ_BYTES_FIXED
@@ -963,10 +963,10 @@ LOCAL_FUNCTION ssz_l0_hash
     CALL_EXTERN crypto_sha256
     mov     x0, #SSZ_OK
     LEAVE   0
-END_FUNCTION ssz_l0_hash
+END_FUNCTION ssz_hash_pair
 
-/* ssz_l0_level(ctx, node, slot, level): describe the leaves of the value in slot. */
-LOCAL_FUNCTION ssz_l0_level
+/* ssz_value_level(ctx, node, slot, level): describe the leaves of the value in slot. */
+LOCAL_FUNCTION ssz_value_level
     UNWIND_END_PROLOGUE
     ldr     x9, [x2, #SSZ_SLOT_P]
     ldr     x10, [x2, #SSZ_SLOT_B]
@@ -1069,10 +1069,10 @@ LOCAL_FUNCTION ssz_l0_level
     str     x16, [x3, #SSZ_LEVEL_COUNT]
 90: mov     x0, #SSZ_OK
     ret
-END_FUNCTION ssz_l0_level
+END_FUNCTION ssz_value_level
 
-/* ssz_l0_child(ctx, level, index, child): describe the leaves of leaf index of level. */
-LOCAL_FUNCTION ssz_l0_child
+/* ssz_child_level(ctx, level, index, child): describe the leaves of leaf index of level. */
+LOCAL_FUNCTION ssz_child_level
     ENTER   32
     mov     x19, x0
     mov     x20, x1
@@ -1128,13 +1128,13 @@ LOCAL_FUNCTION ssz_l0_child
 9:  mov     x0, x19
     add     x2, sp, #96
     mov     x3, x22
-    bl      ssz_l0_level
+    bl      ssz_value_level
     mov     x0, #SSZ_OK
     LEAVE   32
-END_FUNCTION ssz_l0_child
+END_FUNCTION ssz_child_level
 
-/* ssz_l0_leaf(ctx, level, index, work, out): out = leaf index of level. */
-LOCAL_FUNCTION ssz_l0_leaf
+/* ssz_level_leaf(ctx, level, index, work, out): out = leaf index of level. */
+LOCAL_FUNCTION ssz_level_leaf
     ENTER   0
     mov     x19, x0
     mov     x20, x1
@@ -1167,7 +1167,7 @@ LOCAL_FUNCTION ssz_l0_leaf
     mov     x1, x20
     mov     x2, x21
     mov     x3, x24
-    bl      ssz_l0_child
+    bl      ssz_child_level
     add     x25, x24, #SSZ_LEVEL_SIZE
     ldr     x9, [x22]
     sub     x9, x9, #(8 + SSZ_LEVEL_SIZE)
@@ -1176,13 +1176,13 @@ LOCAL_FUNCTION ssz_l0_leaf
     mov     x1, x24
     mov     x2, x25
     mov     x3, x23
-    bl      ssz_l0_root
+    bl      ssz_level_root
 90: mov     x0, #SSZ_OK
     LEAVE   0
-END_FUNCTION ssz_l0_leaf
+END_FUNCTION ssz_level_leaf
 
-/* ssz_l0_root(ctx, level, work, out): out = hash tree root of the value of level. */
-LOCAL_FUNCTION ssz_l0_root
+/* ssz_level_root(ctx, level, work, out): out = hash tree root of the value of level. */
+LOCAL_FUNCTION ssz_level_root
     ENTER   48
     mov     x19, x0
     mov     x20, x1
@@ -1196,7 +1196,7 @@ LOCAL_FUNCTION ssz_l0_root
     add     x2, sp, #96
     mov     x3, x21
     mov     x4, x22
-    bl      ssz_l0_merkleize
+    bl      ssz_subtree_root
     ldr     x9, [x20, #SSZ_LEVEL_MIXIN]
     cbz     x9, 90f
     /* mix in the length as a 32-byte little-endian number */
@@ -1208,18 +1208,18 @@ LOCAL_FUNCTION ssz_l0_root
     mov     x1, x22
     add     x2, sp, #112
     mov     x3, x22
-    bl      ssz_l0_hash
+    bl      ssz_hash_pair
 90: mov     x0, #SSZ_OK
     LEAVE   48
-END_FUNCTION ssz_l0_root
+END_FUNCTION ssz_level_root
 
 /*
- * ssz_l0_merkleize(ctx, level, range, work, out): out = root of the subtree of
+ * ssz_subtree_root(ctx, level, range, work, out): out = root of the subtree of
  * depth range.depth over leaves range.lo onward, padded with zero trees.
  * work: size, frontier of depth + 1 nodes, the node h, then the leaf work.
  * Locals: index sp + 96, a node is pending sp + 104, leaf work sp + 112, j sp + 120.
  */
-LOCAL_FUNCTION ssz_l0_merkleize
+LOCAL_FUNCTION ssz_subtree_root
     ENTER   32
     mov     x19, x0
     mov     x20, x1
@@ -1264,7 +1264,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     add     x2, sp, #96
     ldr     x3, [sp, #112]
     mov     x4, x28
-    bl      ssz_l0_leaf
+    bl      ssz_level_leaf
     str     xzr, [sp, #120]
 21: ldr     x10, [sp, #120]
     lsr     x11, x26, x10
@@ -1273,7 +1273,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     add     x1, x27, x10, lsl #5
     mov     x2, x28
     mov     x3, x28
-    bl      ssz_l0_hash
+    bl      ssz_hash_pair
     ldr     x10, [sp, #120]
     add     x10, x10, #1
     str     x10, [sp, #120]
@@ -1301,7 +1301,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
 42: mov     x2, x28
 43: mov     x0, x19
     mov     x3, x28
-    bl      ssz_l0_hash
+    bl      ssz_hash_pair
     b       46f
 45: ldr     x11, [sp, #104]
     cbz     x11, 46f
@@ -1310,7 +1310,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     ldr     x2, [x19, #SSZ_CTX_ZERO]
     add     x2, x2, x26, lsl #5
     mov     x3, x28
-    bl      ssz_l0_hash
+    bl      ssz_hash_pair
 46: add     x26, x26, #1
     b       41b
 50: ldr     x11, [sp, #104]
@@ -1321,7 +1321,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
 51: COPY32  x24, x28
 90: mov     x0, #SSZ_OK
     LEAVE   32
-END_FUNCTION ssz_l0_merkleize
+END_FUNCTION ssz_subtree_root
 
 /* ssz_hash_tree_root(type, value, scratch, root). Locals: slot at sp + 96. */
 FUNCTION ssz_hash_tree_root
@@ -1347,7 +1347,7 @@ FUNCTION ssz_hash_tree_root
     mov     x1, x20
     add     x2, sp, #96
     mov     x3, x24
-    bl      ssz_l0_level
+    bl      ssz_value_level
     add     x25, x23, #SSZ_SCR_WORK
     ldr     x9, [x23]
     sub     x9, x9, #SSZ_SCR_WORK
@@ -1356,7 +1356,7 @@ FUNCTION ssz_hash_tree_root
     mov     x1, x24
     mov     x2, x25
     mov     x3, x22
-    bl      ssz_l0_root
+    bl      ssz_level_root
     mov     x0, #SSZ_OK
     b       90f
 80: mov     x0, #SSZ_BUFFER_TOO_SMALL
@@ -1528,7 +1528,7 @@ FUNCTION ssz_build_proof
     mov     x1, x25
     add     x2, sp, #96
     mov     x3, x20
-    bl      ssz_l0_level
+    bl      ssz_value_level
     add     x28, x23, #SSZ_SCR_WORK
     ldr     x9, [x23]
     sub     x9, x9, #SSZ_SCR_WORK
@@ -1566,7 +1566,7 @@ FUNCTION ssz_build_proof
     add     x2, sp, #128
     mov     x3, x28
     mov     x4, x12
-    bl      ssz_l0_merkleize
+    bl      ssz_subtree_root
     b       70f
 35: /* down this level's tree */
     sub     x9, x26, x27
@@ -1606,7 +1606,7 @@ FUNCTION ssz_build_proof
     mov     x1, x20
     add     x2, sp, #128
     mov     x3, x28
-    bl      ssz_l0_merkleize
+    bl      ssz_subtree_root
     b       36b
 38: ldr     x9, [sp, #176]
     ldr     x10, [sp, #184]
@@ -1625,7 +1625,7 @@ FUNCTION ssz_build_proof
     mov     x1, x20
     add     x2, sp, #144
     mov     x3, x14
-    bl      ssz_l0_child
+    bl      ssz_child_level
     add     x20, x28, #8
     add     x9, x20, #SSZ_LEVEL_SIZE
     ldr     x10, [x28]
@@ -1660,6 +1660,83 @@ FUNCTION ssz_build_proof
 85: mov     x0, #SSZ_PATH_INTO_GAP
 90: LEAVE   96
 END_FUNCTION ssz_build_proof
+
+/*
+ * ssz_verify_merkle_proof(leaf, branch, gindex, root, valid). Rebuilds the root
+ * from leaf and branch, as v0.1.0 calculate_merkle_root does, and compares it.
+ * x19 next branch node, x20 node count, x21 gindex, x22 root, x23 valid,
+ * x24 level. Locals: the SHA-256 input ByteList at sp + 96 (88 bytes), the
+ * node at sp + 184.
+ */
+FUNCTION ssz_verify_merkle_proof
+    ENTER   128
+    ldr     x21, [x2]
+    cbz     x21, 81f
+    /* depth = the bit length of gindex - 1 */
+    clz     x9, x21
+    mov     x10, #63
+    sub     x10, x10, x9
+    cbz     x10, 82f
+    ldr     x20, [x1, #SSZ_BYTES_COUNT]
+    cmp     x20, x10
+    b.ne    83f
+    ldr     x9, [x1, #SSZ_BYTES_OFFSET]
+    add     x19, x1, x9
+    mov     x22, x3
+    mov     x23, x4
+    add     x9, sp, #184
+    COPY32  x9, x0
+    add     x9, sp, #96
+    mov     x10, #88
+    str     x10, [x9, #SSZ_BYTES_SIZE]
+    mov     x10, #SSZ_BYTES_FIXED
+    str     x10, [x9, #SSZ_BYTES_OFFSET]
+    mov     x10, #64
+    str     x10, [x9, #SSZ_BYTES_COUNT]
+    mov     x24, #0
+1:  cmp     x24, x20
+    b.hs    5f
+    add     x9, sp, #(96 + SSZ_BYTES_FIXED)
+    add     x10, sp, #(96 + SSZ_BYTES_FIXED + 32)
+    add     x11, sp, #184
+    lsr     x12, x21, x24
+    tbz     x12, #0, 2f
+    /* bit set: the branch node is on the left */
+    COPY32  x9, x19
+    COPY32  x10, x11
+    b       3f
+2:  COPY32  x9, x11
+    COPY32  x10, x19
+3:  add     x0, sp, #96
+    add     x1, sp, #184
+    CALL_EXTERN crypto_sha256
+    add     x19, x19, #32
+    add     x24, x24, #1
+    b       1b
+5:  /* valid = 1 when the node equals root */
+    ldp     x9, x10, [sp, #184]
+    ldp     x11, x12, [x22]
+    eor     x9, x9, x11
+    eor     x10, x10, x12
+    orr     x9, x9, x10
+    ldp     x10, x11, [sp, #200]
+    ldp     x12, x13, [x22, #16]
+    eor     x10, x10, x12
+    eor     x11, x11, x13
+    orr     x10, x10, x11
+    orr     x9, x9, x10
+    cmp     x9, #0
+    cset    x9, eq
+    str     x9, [x23]
+    mov     x0, #SSZ_OK
+    b       90f
+81: mov     x0, #SSZ_NOT_A_GINDEX
+    b       90f
+82: mov     x0, #SSZ_ROOT_HAS_NO_BRANCH
+    b       90f
+83: mov     x0, #SSZ_BRANCH_LENGTH
+90: LEAVE   128
+END_FUNCTION ssz_verify_merkle_proof
 
 /* ---------------------------------------------------------------- Constants */
 

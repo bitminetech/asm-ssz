@@ -5,19 +5,19 @@
 ### Functions
 
 - [`ssz_hash_tree_root`](#function-ssz_hash_tree_root): computes the hash tree root of a value.
-- [`ssz_l0_hash`](#function-ssz_l0_hash): hashes two tree nodes into their parent. Internal.
-- [`ssz_l0_level`](#function-ssz_l0_level): describes the leaves of one value. Internal.
-- [`ssz_l0_child`](#function-ssz_l0_child): describes the leaves of the value under one leaf. Internal.
-- [`ssz_l0_leaf`](#function-ssz_l0_leaf): gives one leaf. Internal.
-- [`ssz_l0_root`](#function-ssz_l0_root): gives the hash tree root of one value. Internal.
-- [`ssz_l0_merkleize`](#function-ssz_l0_merkleize): gives the root of one subtree. Internal.
+- [`ssz_hash_pair`](#function-ssz_hash_pair): hashes two tree nodes into their parent.
+- [`ssz_value_level`](#function-ssz_value_level): describes the leaves of one value.
+- [`ssz_child_level`](#function-ssz_child_level): describes the leaves of the value under one leaf.
+- [`ssz_level_leaf`](#function-ssz_level_leaf): gives one leaf.
+- [`ssz_level_root`](#function-ssz_level_root): gives the hash tree root of one value.
+- [`ssz_subtree_root`](#function-ssz_subtree_root): gives the root of one subtree.
 
 ### Types
 
 - [`Root`](#type-root): a Merkle root or tree node.
-- [`Level`](#type-level): the leaves of one value. Internal.
-- [`Range`](#type-range): one subtree of a level. Internal.
-- [`Work`](#type-work): work area for one level. Internal.
+- [`Level`](#type-level): the leaves of one value.
+- [`Range`](#type-range): one subtree of a level.
+- [`Work`](#type-work): work area for one level.
 
 ## Spec
 
@@ -80,18 +80,19 @@ ssz_hash_tree_root(type, value, scratch, root) -> status
 
 ### ABI
 
+- Role: L2.
 - Symbol: `ssz_hash_tree_root` (`_ssz_hash_tree_root` on macOS).
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `type`, `value`, `scratch`, `root`.
 
-## Function `ssz_l0_hash`
+## Function `ssz_hash_pair`
 
-Hashes two tree nodes into their parent. Internal.
+Hashes two tree nodes into their parent.
 
 ### Signature
 
 ```
-ssz_l0_hash(ctx, left, right, out) -> status
+ssz_hash_pair(ctx, left, right, out) -> status
 ```
 
 ### Arguments
@@ -132,18 +133,19 @@ ssz_l0_hash(ctx, left, right, out) -> status
 
 ### ABI
 
-- Symbol: `ssz_l0_hash`, local to the library.
+- Role: L0.
+- Symbol: `ssz_hash_pair`, local to the library.
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `ctx`, `left`, `right`, `out`.
 
-## Function `ssz_l0_level`
+## Function `ssz_value_level`
 
-Describes the leaves of one value at its own tree level. Internal.
+Describes the leaves of one value at its own tree level.
 
 ### Signature
 
 ```
-ssz_l0_level(ctx, node, slot, level) -> status
+ssz_value_level(ctx, node, slot, level) -> status
 ```
 
 ### Arguments
@@ -185,18 +187,19 @@ ssz_l0_level(ctx, node, slot, level) -> status
 
 ### ABI
 
-- Symbol: `ssz_l0_level`, local to the library.
+- Role: L0.
+- Symbol: `ssz_value_level`, local to the library.
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `ctx`, `node`, `slot`, `level`.
 
-## Function `ssz_l0_child`
+## Function `ssz_child_level`
 
-Describes the leaves of the value under one leaf of a level. Internal.
+Describes the leaves of the value under one leaf of a level.
 
 ### Signature
 
 ```
-ssz_l0_child(ctx, level, index, child) -> status
+ssz_child_level(ctx, level, index, child) -> status
 ```
 
 ### Arguments
@@ -237,18 +240,19 @@ ssz_l0_child(ctx, level, index, child) -> status
 
 ### ABI
 
-- Symbol: `ssz_l0_child`, local to the library.
+- Role: L0.
+- Symbol: `ssz_child_level`, local to the library.
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `ctx`, `level`, `index`, `child`.
 
-## Function `ssz_l0_leaf`
+## Function `ssz_level_leaf`
 
-Gives one leaf of a level. Internal.
+Gives one leaf of a level.
 
 ### Signature
 
 ```
-ssz_l0_leaf(ctx, level, index, work, out) -> status
+ssz_level_leaf(ctx, level, index, work, out) -> status
 ```
 
 ### Arguments
@@ -290,18 +294,19 @@ ssz_l0_leaf(ctx, level, index, work, out) -> status
 
 ### ABI
 
-- Symbol: `ssz_l0_leaf`, local to the library.
+- Role: L0.
+- Symbol: `ssz_level_leaf`, local to the library.
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `ctx`, `level`, `index`, `work`, `out`.
 
-## Function `ssz_l0_root`
+## Function `ssz_level_root`
 
-Gives the hash tree root of the value that a level describes. Internal.
+Gives the hash tree root of the value that a level describes.
 
 ### Signature
 
 ```
-ssz_l0_root(ctx, level, work, out) -> status
+ssz_level_root(ctx, level, work, out) -> status
 ```
 
 ### Arguments
@@ -320,7 +325,7 @@ ssz_l0_root(ctx, level, work, out) -> status
 ### Caller must
 
 - Pass a `Ctx` that an L2 function filled from a valid `TypeDescriptor`.
-- Pass a `level` that `ssz_l0_level` or `ssz_l0_child` wrote.
+- Pass a `level` that `ssz_value_level` or `ssz_child_level` wrote.
 - Give `work` the bytes that this level needs (`Work` rules).
 - Keep `work` and `out` apart from each other and from `level`.
 
@@ -338,22 +343,23 @@ ssz_l0_root(ctx, level, work, out) -> status
 ### Limits
 
 - Stack of its own frame: 112 bytes on x86-64, return address included, and 144 bytes on ARM64 and RISC-V.
-- Recursion depth: at most one call for each level of nested types, through `ssz_l0_merkleize` and `ssz_l0_leaf`.
+- Recursion depth: at most one call for each level of nested types, through `ssz_subtree_root` and `ssz_level_leaf`.
 
 ### ABI
 
-- Symbol: `ssz_l0_root`, local to the library.
+- Role: L0.
+- Symbol: `ssz_level_root`, local to the library.
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `ctx`, `level`, `work`, `out`.
 
-## Function `ssz_l0_merkleize`
+## Function `ssz_subtree_root`
 
-Gives the root of one subtree of a level. Internal.
+Gives the root of one subtree of a level.
 
 ### Signature
 
 ```
-ssz_l0_merkleize(ctx, level, range, work, out) -> status
+ssz_subtree_root(ctx, level, range, work, out) -> status
 ```
 
 ### Arguments
@@ -373,7 +379,7 @@ ssz_l0_merkleize(ctx, level, range, work, out) -> status
 ### Caller must
 
 - Pass a `Ctx` that an L2 function filled from a valid `TypeDescriptor`.
-- Pass a `level` that `ssz_l0_level` or `ssz_l0_child` wrote.
+- Pass a `level` that `ssz_value_level` or `ssz_child_level` wrote.
 - Pass a `range` within the tree of `level`.
 - Give `work` the bytes that this level needs (`Work` rules).
 - Keep `work` and `out` apart from each other and from `level`.
@@ -397,7 +403,8 @@ ssz_l0_merkleize(ctx, level, range, work, out) -> status
 
 ### ABI
 
-- Symbol: `ssz_l0_merkleize`, local to the library.
+- Role: L0.
+- Symbol: `ssz_subtree_root`, local to the library.
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `ctx`, `level`, `range`, `work`, `out`.
 
@@ -418,7 +425,7 @@ A Merkle root or tree node.
 
 ## Type `Level`
 
-The leaves of one value at its own tree level. Internal.
+The leaves of one value at its own tree level.
 
 ### Layout
 
@@ -445,7 +452,7 @@ The leaves of one value at its own tree level. Internal.
 
 ## Type `Range`
 
-One subtree of a level. Internal.
+One subtree of a level.
 
 ### Layout
 
@@ -462,7 +469,7 @@ One subtree of a level. Internal.
 
 ## Type `Work`
 
-Work area for one level. Internal.
+Work area for one level.
 
 ### Layout
 
@@ -473,7 +480,7 @@ Work area for one level. Internal.
 ### Rules
 
 - Starts at a multiple of 8.
-- `ssz_l0_merkleize` puts one node for each depth from 0 to `depth` at byte 8, then one more node.
+- `ssz_subtree_root` puts one node for each depth from 0 to `depth` at byte 8, then one more node.
 - When the leaves are child values, the `Work` of a leaf follows.
 - Needs 8 + 32 × (`depth` + 2) bytes.
 - Needs 8 + 96 more bytes, plus the most that a child needs, when the leaves are child values.

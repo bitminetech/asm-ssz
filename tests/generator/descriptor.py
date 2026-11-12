@@ -152,7 +152,7 @@ def tree_depth(chunks):
 
 def work_bytes(t, n, nodes):
     """
-    Work area that ssz_l0_root needs for a value of type t: its size header, a
+    Work area that ssz_level_root needs for a value of type t: its size header, a
     frontier of depth + 1 nodes and the node h; and, when leaves are child
     values, a size header, a child Level and the child's own work area.
     """

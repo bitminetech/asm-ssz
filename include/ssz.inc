@@ -46,6 +46,10 @@
 /* Decode refusal for a top-level byte vector of the wrong length (v0.1.0 ValueFault COUNT). */
 .set SSZ_COUNT, 28
 
+/* Verify refusals. Each one is the v0.1.0 ValueFault of the same name. Index 0 gives SSZ_NOT_A_GINDEX. */
+.set SSZ_ROOT_HAS_NO_BRANCH, 29
+.set SSZ_BRANCH_LENGTH, 30
+
 /* ---------------------------------------------------------------- Type descriptor */
 
 /* Descriptor value: fixed fields. */
@@ -168,30 +172,31 @@
  * Functions, roles and allowed calls (ARCHITECTURE.md sections 4 and 5).
  * Requirements: docs/reference/<file>.md.
  *
- * | Function                  | Role | Arguments; outputs                          | File             |
- * |---------------------------|------|---------------------------------------------|------------------|
- * | ssz_serialize             | L2   | type, value, scratch; serialized            | serialization.md |
- * | ssz_serialize_size        | L2   | type, value, scratch; size                  | serialization.md |
- * | ssz_deserialize           | L2   | type, serialized, scratch; value            | serialization.md |
- * | ssz_deserialize_size      | L2   | type, serialized, scratch; size             | serialization.md |
- * | ssz_hash_tree_root        | L2   | type, value, scratch; root                  | merkleization.md |
- * | ssz_get_generalized_index | L2   | type, path; gindex                          | proofs.md        |
- * | ssz_build_proof           | L2   | type, value, gindex, scratch; branch        | proofs.md        |
- * | ssz_l0_ser                | L0   | ctx, node, slot, cursor (state)             | serialization.md |
- * | ssz_l0_de                 | L0   | ctx, node, slot, cursor (state)             | serialization.md |
- * | ssz_l0_level              | L0   | ctx, node, slot; level                      | merkleization.md |
- * | ssz_l0_child              | L0   | ctx, level (state), index; child            | merkleization.md |
- * | ssz_l0_leaf               | L0   | ctx, level (state), index, work; out        | merkleization.md |
- * | ssz_l0_root               | L0   | ctx, level (state), work; out               | merkleization.md |
- * | ssz_l0_merkleize          | L0   | ctx, level (state), range, work; out        | merkleization.md |
- * | ssz_l0_hash               | L0   | ctx, left, right; out                       | merkleization.md |
+ * | Function                  | Role | Arguments; outputs                   | File             |
+ * |---------------------------|------|--------------------------------------|------------------|
+ * | ssz_serialize             | L2   | type, value, scratch; serialized     | serialization.md |
+ * | ssz_serialize_size        | L2   | type, value, scratch; size           | serialization.md |
+ * | ssz_deserialize           | L2   | type, serialized, scratch; value     | serialization.md |
+ * | ssz_deserialize_size      | L2   | type, serialized, scratch; size      | serialization.md |
+ * | ssz_hash_tree_root        | L2   | type, value, scratch; root           | merkleization.md |
+ * | ssz_get_generalized_index | L2   | type, path; gindex                   | proofs.md        |
+ * | ssz_build_proof           | L2   | type, value, gindex, scratch; branch | proofs.md        |
+ * | ssz_verify_merkle_proof   | L2   | leaf, branch, gindex, root; valid    | proofs.md        |
+ * | ssz_encode_value          | L0   | ctx, node, slot, cursor (state)      | serialization.md |
+ * | ssz_decode_value          | L0   | ctx, node, slot, cursor (state)      | serialization.md |
+ * | ssz_value_level           | L0   | ctx, node, slot; level               | merkleization.md |
+ * | ssz_child_level           | L0   | ctx, level (state), index; child     | merkleization.md |
+ * | ssz_level_leaf            | L0   | ctx, level (state), index, work; out | merkleization.md |
+ * | ssz_level_root            | L0   | ctx, level (state), work; out        | merkleization.md |
+ * | ssz_subtree_root          | L0   | ctx, level (state), range, work; out | merkleization.md |
+ * | ssz_hash_pair             | L0   | ctx, left, right; out                | merkleization.md |
  *
  * Allowed calls:
- * - ssz_serialize, ssz_serialize_size: ssz_l0_ser. ssz_l0_ser: itself.
- * - ssz_deserialize, ssz_deserialize_size: ssz_l0_de. ssz_l0_de: itself.
- * - ssz_hash_tree_root: ssz_l0_level, ssz_l0_root.
- * - ssz_build_proof: ssz_l0_level, ssz_l0_child, ssz_l0_merkleize.
- * - ssz_l0_root: ssz_l0_merkleize, ssz_l0_hash. ssz_l0_merkleize: ssz_l0_leaf, ssz_l0_hash.
- * - ssz_l0_leaf: ssz_l0_child, ssz_l0_root. ssz_l0_child: ssz_l0_level.
- * - ssz_l0_hash: crypto_sha256 from asm-crypto (README, Dependencies).
+ * - ssz_serialize, ssz_serialize_size: ssz_encode_value. ssz_encode_value: itself.
+ * - ssz_deserialize, ssz_deserialize_size: ssz_decode_value. ssz_decode_value: itself.
+ * - ssz_hash_tree_root: ssz_value_level, ssz_level_root.
+ * - ssz_build_proof: ssz_value_level, ssz_child_level, ssz_subtree_root.
+ * - ssz_level_root: ssz_subtree_root, ssz_hash_pair. ssz_subtree_root: ssz_level_leaf, ssz_hash_pair.
+ * - ssz_level_leaf: ssz_child_level, ssz_level_root. ssz_child_level: ssz_value_level.
+ * - ssz_hash_pair, ssz_verify_merkle_proof: crypto_sha256 from asm-crypto (README, Dependencies).
  */

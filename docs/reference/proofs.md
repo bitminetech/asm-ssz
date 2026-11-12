@@ -6,6 +6,7 @@
 
 - [`ssz_get_generalized_index`](#function-ssz_get_generalized_index): finds the tree node that a path names.
 - [`ssz_build_proof`](#function-ssz_build_proof): builds the Merkle branch for one tree node.
+- [`ssz_verify_merkle_proof`](#function-ssz_verify_merkle_proof): checks that a leaf and its branch rebuild a root.
 
 ### Types
 
@@ -16,8 +17,9 @@
 ## Spec
 
 - Document: [ssz-specs v0.1.0](https://github.com/ethereum/ssz-specs/tree/7bce07ff7d51b1a3c66ff4e2bd3233ac248ede70/src/ssz), the version that consensus-specs v1.7.0-beta.4 pins.
-- Section: `get_generalized_index` in `paths.py`, `gindex.py`, and `build_proof` and `node_root` in `proofs.py`.
-- consensus-specs calls them `get_generalized_index` and `compute_merkle_proof`.
+- Section: `get_generalized_index` in `paths.py`, `gindex.py`, `build_proof` and `node_root` in `proofs.py`, and `verify_merkle_proof` and `calculate_merkle_root` in `verification.py`.
+- consensus-specs calls them `get_generalized_index`, `compute_merkle_proof` and `is_valid_merkle_branch`.
+- `is_valid_merkle_branch` takes a depth and an index in place of a generalized index. The generalized index is 2 to the power `depth`, plus `index`.
 
 ## Function `ssz_get_generalized_index`
 
@@ -69,6 +71,7 @@ ssz_get_generalized_index(type, path, gindex) -> status
 
 ### ABI
 
+- Role: L2.
 - Symbol: `ssz_get_generalized_index` (`_ssz_get_generalized_index` on macOS).
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `type`, `path`, `gindex`.
@@ -134,9 +137,72 @@ ssz_build_proof(type, value, gindex, scratch, branch) -> status
 
 ### ABI
 
+- Role: L2.
 - Symbol: `ssz_build_proof` (`_ssz_build_proof` on macOS).
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `type`, `value`, `gindex`, `scratch`, `branch`.
+
+## Function `ssz_verify_merkle_proof`
+
+Checks that a leaf and its branch rebuild a root.
+
+### Signature
+
+```
+ssz_verify_merkle_proof(leaf, branch, gindex, root, valid) -> status
+```
+
+### Arguments
+
+| Name | Role | Type |
+|---|---|---|
+| `leaf` | input | `Root` |
+| `branch` | input | `Branch` |
+| `gindex` | input | `GeneralizedIndex` |
+| `root` | input | `Root` |
+| `valid` | output | u64 |
+
+`Root` is in [merkleization.md](merkleization.md).
+
+### Returns
+
+- `SSZ_OK`: `valid` holds the result.
+- `SSZ_NOT_A_GINDEX`: the index is 0.
+- `SSZ_ROOT_HAS_NO_BRANCH`: the index is 1.
+- `SSZ_BRANCH_LENGTH`: `branch` does not hold floor(log2(index)) nodes.
+- After any status other than `SSZ_OK`, `valid` is not written.
+
+### Caller must
+
+- Pass a valid `Branch` header in `branch`. The nodes in it can be anything.
+- Keep `valid` apart from the inputs.
+
+### Function does
+
+- Checks the index, then the branch length, in the order v0.1.0 `calculate_merkle_root` checks them.
+- Rebuilds the root from `leaf` and `branch`, as v0.1.0 `calculate_merkle_root` does.
+- Puts each branch node on the left when the matching bit of the index is 1, counting bits from the leaf.
+- Writes 1 to `valid` when the rebuilt root equals `root`, and 0 when it does not.
+- Hashes with `crypto_sha256` from asm-crypto.
+
+### Function never
+
+- Reads outside `leaf`, `gindex`, `root`, the `Branch` header and its `count` nodes.
+- Writes outside `valid` and its own stack.
+- Keeps a pointer after it returns.
+- Makes an OS call.
+
+### Limits
+
+- Hashes: floor(log2(index)) calls of `crypto_sha256`, on 64 bytes each.
+- Stack: 704 bytes on x86-64, 640 on ARM64 and 704 on RISC-V, `crypto_sha256` included.
+
+### ABI
+
+- Role: L2.
+- Symbol: `ssz_verify_merkle_proof` (`_ssz_verify_merkle_proof` on macOS).
+- Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
+- Argument order: `leaf`, `branch`, `gindex`, `root`, `valid`.
 
 ## Type `Path`
 
@@ -200,6 +266,9 @@ A list of tree nodes.
 - Generalized indices: the constant tables at [consensus-specs@aa16bb4](https://github.com/ethereum/consensus-specs/tree/aa16bb4c156184e9548a997d53efaf2a228a6304). Each row states a path and its index.
   - Files: `specs/altair/light-client/sync-protocol.md`, `specs/capella/light-client/sync-protocol.md`, `specs/electra/light-client/sync-protocol.md`.
   - Check: the Python spec's `get_generalized_index` gives the stated index.
+- Verification: each proof case above with the root of its object, and 9 changed copies of it.
+  - Changes: the leaf, the root, the first node or the last node changed; the sibling index; one node missing or extra; index 1; index 0.
+  - Expected results: ssz-specs v0.1.0 `verify_merkle_proof`.
 
 ## Results
 

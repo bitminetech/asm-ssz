@@ -8,8 +8,8 @@
 - [`ssz_serialize_size`](#function-ssz_serialize_size): gives the buffer size that `ssz_serialize` needs.
 - [`ssz_deserialize`](#function-ssz_deserialize): reads an SSZ encoding into a value.
 - [`ssz_deserialize_size`](#function-ssz_deserialize_size): gives the buffer size that `ssz_deserialize` needs.
-- [`ssz_l0_ser`](#function-ssz_l0_ser): appends the encoding of one value. Internal.
-- [`ssz_l0_de`](#function-ssz_l0_de): decodes one value. Internal.
+- [`ssz_encode_value`](#function-ssz_encode_value): appends the encoding of one value.
+- [`ssz_decode_value`](#function-ssz_decode_value): decodes one value.
 
 ### Types
 
@@ -20,9 +20,9 @@
 - [`TypeField`](#type-typefield): one container field inside a descriptor.
 - [`ByteList`](#type-bytelist): a byte string with a header.
 - [`Scratch`](#type-scratch): workspace for one call.
-- [`Ctx`](#type-ctx): what every internal function reads. Internal.
-- [`Slot`](#type-slot): where one value is. Internal.
-- [`Cursor`](#type-cursor): where the next byte goes or comes from. Internal.
+- [`Ctx`](#type-ctx): shared values for one call.
+- [`Slot`](#type-slot): where one value is.
+- [`Cursor`](#type-cursor): where the next byte goes or comes from.
 
 ## Spec
 
@@ -80,6 +80,7 @@ ssz_serialize(type, value, scratch, serialized) -> status
 
 ### ABI
 
+- Role: L2.
 - Symbol: `ssz_serialize` (`_ssz_serialize` on macOS).
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `type`, `value`, `scratch`, `serialized`.
@@ -132,6 +133,7 @@ ssz_serialize_size(type, value, scratch, size) -> status
 
 ### ABI
 
+- Role: L2.
 - Symbol: `ssz_serialize_size` (`_ssz_serialize_size` on macOS).
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `type`, `value`, `scratch`, `size`.
@@ -197,6 +199,7 @@ ssz_deserialize(type, serialized, scratch, value) -> status
 
 ### ABI
 
+- Role: L2.
 - Symbol: `ssz_deserialize` (`_ssz_deserialize` on macOS).
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `type`, `serialized`, `scratch`, `value`.
@@ -252,18 +255,19 @@ ssz_deserialize_size(type, serialized, scratch, size) -> status
 
 ### ABI
 
+- Role: L2.
 - Symbol: `ssz_deserialize_size` (`_ssz_deserialize_size` on macOS).
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `type`, `serialized`, `scratch`, `size`.
 
-## Function `ssz_l0_ser`
+## Function `ssz_encode_value`
 
-Appends the SSZ encoding of one value at a cursor. Internal: the serialize functions call it.
+Appends the SSZ encoding of one value at a cursor.
 
 ### Signature
 
 ```
-ssz_l0_ser(ctx, node, slot, cursor) -> status
+ssz_encode_value(ctx, node, slot, cursor) -> status
 ```
 
 ### Arguments
@@ -304,18 +308,19 @@ ssz_l0_ser(ctx, node, slot, cursor) -> status
 
 ### ABI
 
-- Symbol: `ssz_l0_ser`, local to the library.
+- Role: L0.
+- Symbol: `ssz_encode_value`, local to the library.
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `ctx`, `node`, `slot`, `cursor`.
 
-## Function `ssz_l0_de`
+## Function `ssz_decode_value`
 
-Decodes one value from the encoding at a cursor. Internal: the deserialize functions call it.
+Decodes one value from the encoding at a cursor.
 
 ### Signature
 
 ```
-ssz_l0_de(ctx, node, slot, cursor) -> status
+ssz_decode_value(ctx, node, slot, cursor) -> status
 ```
 
 ### Arguments
@@ -362,7 +367,8 @@ ssz_l0_de(ctx, node, slot, cursor) -> status
 
 ### ABI
 
-- Symbol: `ssz_l0_de`, local to the library.
+- Role: L0.
+- Symbol: `ssz_decode_value`, local to the library.
 - Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
 - Argument order: `ctx`, `node`, `slot`, `cursor`.
 
@@ -527,7 +533,7 @@ Workspace for one call.
 
 ## Type `Ctx`
 
-What every internal function reads. Internal.
+Shared values for one call.
 
 ### Layout
 
@@ -544,11 +550,11 @@ What every internal function reads. Internal.
 
 - 64 bytes.
 - Each L2 function fills it in its `Scratch`.
-- Internal functions do not change it.
+- The functions it calls do not change it.
 
 ## Type `Slot`
 
-Where one value is. Internal.
+Where one value is.
 
 ### Layout
 
@@ -569,7 +575,7 @@ Where one value is. Internal.
 
 ## Type `Cursor`
 
-Where the next byte goes or comes from. Internal.
+Where the next byte goes or comes from.
 
 ### Layout
 

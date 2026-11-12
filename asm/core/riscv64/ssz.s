@@ -154,7 +154,7 @@
     mv      a0, s1
     mv      a2, sp
     mv      a3, s3
-    call    ssz_l0_de
+    call    ssz_decode_value
     bnez    a0, 280f
 .endm
 
@@ -168,7 +168,7 @@
     mv      a0, s1
     mv      a2, sp
     mv      a3, s3
-    call    ssz_l0_ser
+    call    ssz_encode_value
 .endm
 
 /*
@@ -242,11 +242,11 @@
 /* ---------------------------------------------------------------- Serialize */
 
 /*
- * ssz_l0_ser(ctx, node, slot, cursor): append the SSZ encoding of the value in
+ * ssz_encode_value(ctx, node, slot, cursor): append the SSZ encoding of the value in
  * slot to cursor.out. Locals: child slot at sp + 0.
  * s1 ctx, s2 node, s3 cursor, s4 p, s5 b, s6 kind.
  */
-LOCAL_FUNCTION ssz_l0_ser
+LOCAL_FUNCTION ssz_encode_value
     ENTER   48
     mv      s1, a0
     mv      s2, a1
@@ -407,7 +407,7 @@ LOCAL_FUNCTION ssz_l0_ser
 
 90: li      a0, SSZ_OK
     LEAVE   48
-END_FUNCTION ssz_l0_ser
+END_FUNCTION ssz_encode_value
 
 /* ssz_serialize_size(type, value, scratch, size). Locals: slot 0, cursor 32. */
 FUNCTION ssz_serialize_size
@@ -426,7 +426,7 @@ FUNCTION ssz_serialize_size
     mv      a1, s2
     mv      a2, sp
     addi    a3, sp, 32
-    call    ssz_l0_ser
+    call    ssz_encode_value
     ld      t0, 32(sp)
     addi    t0, t0, SSZ_BYTES_FIXED
     sd      t0, 0(s4)
@@ -454,7 +454,7 @@ FUNCTION ssz_serialize
     mv      a1, s2
     mv      a2, sp
     addi    a3, sp, 32
-    call    ssz_l0_ser
+    call    ssz_encode_value
     ld      s6, 32(sp)
     ld      t0, SSZ_BYTES_SIZE(s4)
     addi    t1, s6, SSZ_BYTES_FIXED
@@ -471,7 +471,7 @@ FUNCTION ssz_serialize
     mv      a1, s2
     mv      a2, sp
     addi    a3, sp, 32
-    call    ssz_l0_ser
+    call    ssz_encode_value
     li      a0, SSZ_OK
     j       90f
 80: li      a0, SSZ_BUFFER_TOO_SMALL
@@ -481,14 +481,14 @@ END_FUNCTION ssz_serialize
 /* ---------------------------------------------------------------- Deserialize */
 
 /*
- * ssz_l0_de(ctx, node, slot, cursor): decode slot.scope bytes at cursor.pos into
+ * ssz_decode_value(ctx, node, slot, cursor): decode slot.scope bytes at cursor.pos into
  * the value in slot, as v0.1.0 deserialize does. On a refusal the cursor is
  * restored. s1 ctx, s2 node, s3 cursor, s4 p, s5 b, s6 kind, s7 scope.
  * Locals: child slot 0, cursor at entry 32 and 40, value start 48, form 56,
  * next variable field 64, start of the encoding 72, first variable field 80,
  * end of the fields 88.
  */
-LOCAL_FUNCTION ssz_l0_de
+LOCAL_FUNCTION ssz_decode_value
     ENTER   96
     mv      s1, a0
     mv      s2, a1
@@ -858,7 +858,7 @@ LOCAL_FUNCTION ssz_l0_de
     ld      t0, 40(sp)
     sd      t0, SSZ_CUR_NEXT(s3)
 299: LEAVE  96
-END_FUNCTION ssz_l0_de
+END_FUNCTION ssz_decode_value
 
 /*
  * L2 deserialize, decode_bytes rules for the top value. Uses s1 ctx, s2 root
@@ -871,7 +871,7 @@ END_FUNCTION ssz_l0_de
     mv      a1, s2
     mv      a2, sp
     addi    a3, sp, 32
-    call    ssz_l0_de
+    call    ssz_decode_value
 .endm
 
 .macro DE_TOP
@@ -977,8 +977,8 @@ END_FUNCTION ssz_deserialize
 
 /* ---------------------------------------------------------------- Merkleization */
 
-/* ssz_l0_hash(ctx, left, right, out): out = SHA-256(left || right), 32 bytes each. */
-LOCAL_FUNCTION ssz_l0_hash
+/* ssz_hash_pair(ctx, left, right, out): out = SHA-256(left || right), 32 bytes each. */
+LOCAL_FUNCTION ssz_hash_pair
     ENTER   0
     ld      t0, SSZ_CTX_SHA(a0)
     addi    t1, t0, SSZ_BYTES_FIXED
@@ -990,10 +990,10 @@ LOCAL_FUNCTION ssz_l0_hash
     CALL_EXTERN crypto_sha256
     li      a0, SSZ_OK
     LEAVE   0
-END_FUNCTION ssz_l0_hash
+END_FUNCTION ssz_hash_pair
 
-/* ssz_l0_level(ctx, node, slot, level): describe the leaves of the value in slot. A leaf. */
-LOCAL_FUNCTION ssz_l0_level
+/* ssz_value_level(ctx, node, slot, level): describe the leaves of the value in slot. A leaf. */
+LOCAL_FUNCTION ssz_value_level
     UNWIND_END_PROLOGUE
     ld      t0, SSZ_SLOT_P(a2)
     ld      t1, SSZ_SLOT_B(a2)
@@ -1098,10 +1098,10 @@ LOCAL_FUNCTION ssz_l0_level
     sd      t6, SSZ_LEVEL_COUNT(a3)
 90: li      a0, SSZ_OK
     ret
-END_FUNCTION ssz_l0_level
+END_FUNCTION ssz_value_level
 
-/* ssz_l0_child(ctx, level, index, child): describe the leaves of leaf index of level. */
-LOCAL_FUNCTION ssz_l0_child
+/* ssz_child_level(ctx, level, index, child): describe the leaves of leaf index of level. */
+LOCAL_FUNCTION ssz_child_level
     ENTER   32
     mv      s1, a0
     mv      s2, a1
@@ -1157,13 +1157,13 @@ LOCAL_FUNCTION ssz_l0_child
 9:  mv      a0, s1
     mv      a2, sp
     mv      a3, s4
-    call    ssz_l0_level
+    call    ssz_value_level
     li      a0, SSZ_OK
     LEAVE   32
-END_FUNCTION ssz_l0_child
+END_FUNCTION ssz_child_level
 
-/* ssz_l0_leaf(ctx, level, index, work, out): out = leaf index of level. */
-LOCAL_FUNCTION ssz_l0_leaf
+/* ssz_level_leaf(ctx, level, index, work, out): out = leaf index of level. */
+LOCAL_FUNCTION ssz_level_leaf
     ENTER   0
     mv      s1, a0
     mv      s2, a1
@@ -1200,7 +1200,7 @@ LOCAL_FUNCTION ssz_l0_leaf
     mv      a1, s2
     mv      a2, s3
     mv      a3, s6
-    call    ssz_l0_child
+    call    ssz_child_level
     addi    s7, s6, SSZ_LEVEL_SIZE
     ld      t0, 0(s4)
     addi    t0, t0, -(8 + SSZ_LEVEL_SIZE)
@@ -1209,13 +1209,13 @@ LOCAL_FUNCTION ssz_l0_leaf
     mv      a1, s6
     mv      a2, s7
     mv      a3, s5
-    call    ssz_l0_root
+    call    ssz_level_root
 90: li      a0, SSZ_OK
     LEAVE   0
-END_FUNCTION ssz_l0_leaf
+END_FUNCTION ssz_level_leaf
 
-/* ssz_l0_root(ctx, level, work, out): out = hash tree root of the value of level. Locals: range 0, length 16. */
-LOCAL_FUNCTION ssz_l0_root
+/* ssz_level_root(ctx, level, work, out): out = hash tree root of the value of level. Locals: range 0, length 16. */
+LOCAL_FUNCTION ssz_level_root
     ENTER   48
     mv      s1, a0
     mv      s2, a1
@@ -1229,7 +1229,7 @@ LOCAL_FUNCTION ssz_l0_root
     mv      a2, sp
     mv      a3, s3
     mv      a4, s4
-    call    ssz_l0_merkleize
+    call    ssz_subtree_root
     ld      t0, SSZ_LEVEL_MIXIN(s2)
     beqz    t0, 90f
     /* mix in the length as a 32-byte little-endian number */
@@ -1242,19 +1242,19 @@ LOCAL_FUNCTION ssz_l0_root
     mv      a1, s4
     addi    a2, sp, 16
     mv      a3, s4
-    call    ssz_l0_hash
+    call    ssz_hash_pair
 90: li      a0, SSZ_OK
     LEAVE   48
-END_FUNCTION ssz_l0_root
+END_FUNCTION ssz_level_root
 
 /*
- * ssz_l0_merkleize(ctx, level, range, work, out): out = root of the subtree of
+ * ssz_subtree_root(ctx, level, range, work, out): out = root of the subtree of
  * depth range.depth over leaves range.lo onward, padded with zero trees.
  * work: size, frontier of depth + 1 nodes, the node h, then the leaf work.
  * s1 ctx, s2 level, s3 lo, s4 depth, s5 work, s6 out, s7 m, s8 k or j,
  * s9 frontier, s10 h. Locals: index 0, a node is pending 8, leaf work 16, j 24.
  */
-LOCAL_FUNCTION ssz_l0_merkleize
+LOCAL_FUNCTION ssz_subtree_root
     ENTER   32
     mv      s1, a0
     mv      s2, a1
@@ -1298,7 +1298,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     mv      a2, sp
     ld      a3, 16(sp)
     mv      a4, s10
-    call    ssz_l0_leaf
+    call    ssz_level_leaf
     sd      zero, 24(sp)
 21: ld      t1, 24(sp)
     srl     t2, s8, t1
@@ -1309,7 +1309,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     add     a1, s9, t3
     mv      a2, s10
     mv      a3, s10
-    call    ssz_l0_hash
+    call    ssz_hash_pair
     ld      t1, 24(sp)
     addi    t1, t1, 1
     sd      t1, 24(sp)
@@ -1339,7 +1339,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
 42: mv      a2, s10
 43: mv      a0, s1
     mv      a3, s10
-    call    ssz_l0_hash
+    call    ssz_hash_pair
     j       46f
 45: ld      t3, 8(sp)
     beqz    t3, 46f
@@ -1349,7 +1349,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
     slli    t2, s8, 5
     add     a2, a2, t2
     mv      a3, s10
-    call    ssz_l0_hash
+    call    ssz_hash_pair
 46: addi    s8, s8, 1
     j       41b
 50: ld      t3, 8(sp)
@@ -1361,7 +1361,7 @@ LOCAL_FUNCTION ssz_l0_merkleize
 51: COPY32  s6, s10
 90: li      a0, SSZ_OK
     LEAVE   32
-END_FUNCTION ssz_l0_merkleize
+END_FUNCTION ssz_subtree_root
 
 /* ssz_hash_tree_root(type, value, scratch, root). Locals: slot 0. */
 FUNCTION ssz_hash_tree_root
@@ -1380,7 +1380,7 @@ FUNCTION ssz_hash_tree_root
     mv      a1, s2
     mv      a2, sp
     mv      a3, s6
-    call    ssz_l0_level
+    call    ssz_value_level
     addi    s7, s5, SSZ_SCR_WORK
     ld      t0, 0(s5)
     addi    t0, t0, -SSZ_SCR_WORK
@@ -1389,7 +1389,7 @@ FUNCTION ssz_hash_tree_root
     mv      a1, s6
     mv      a2, s7
     mv      a3, s4
-    call    ssz_l0_root
+    call    ssz_level_root
     li      a0, SSZ_OK
     j       90f
 80: li      a0, SSZ_BUFFER_TOO_SMALL
@@ -1574,7 +1574,7 @@ FUNCTION ssz_build_proof
     mv      a1, s7
     mv      a2, sp
     mv      a3, s2
-    call    ssz_l0_level
+    call    ssz_value_level
     addi    s10, s5, SSZ_SCR_WORK
     ld      t0, 0(s5)
     addi    t0, t0, -SSZ_SCR_WORK
@@ -1615,7 +1615,7 @@ FUNCTION ssz_build_proof
     addi    a2, sp, 32
     mv      a3, s10
     mv      a4, t3
-    call    ssz_l0_merkleize
+    call    ssz_subtree_root
     j       70f
 35: /* down this level's tree */
     sub     t0, s8, s9
@@ -1655,7 +1655,7 @@ FUNCTION ssz_build_proof
     mv      a1, s2
     addi    a2, sp, 32
     mv      a3, s10
-    call    ssz_l0_merkleize
+    call    ssz_subtree_root
     j       36b
 38: ld      t0, 80(sp)
     ld      t1, 88(sp)
@@ -1671,7 +1671,7 @@ FUNCTION ssz_build_proof
     mv      a1, s2
     addi    a2, sp, 48
     addi    a3, s10, 8
-    call    ssz_l0_child
+    call    ssz_child_level
     addi    s2, s10, 8
     addi    t0, s2, SSZ_LEVEL_SIZE
     ld      t1, 0(s10)
@@ -1705,6 +1705,86 @@ FUNCTION ssz_build_proof
 85: li      a0, SSZ_PATH_INTO_GAP
 90: LEAVE   96
 END_FUNCTION ssz_build_proof
+
+/*
+ * ssz_verify_merkle_proof(leaf, branch, gindex, root, valid). Rebuilds the root
+ * from leaf and branch, as v0.1.0 calculate_merkle_root does, and compares it.
+ * s1 next branch node, s2 node count, s3 gindex, s4 root, s5 valid, s6 level.
+ * Locals: the SHA-256 input ByteList at sp + 0 (88 bytes), the node at sp + 88.
+ */
+FUNCTION ssz_verify_merkle_proof
+    ENTER   128
+    ld      s3, 0(a2)
+    beqz    s3, 81f
+    /* depth = the bit length of gindex - 1 */
+    mv      t0, s3
+    li      t1, -1
+1:  beqz    t0, 2f
+    srli    t0, t0, 1
+    addi    t1, t1, 1
+    j       1b
+2:  beqz    t1, 82f
+    ld      s2, SSZ_BYTES_COUNT(a1)
+    bne     s2, t1, 83f
+    ld      t0, SSZ_BYTES_OFFSET(a1)
+    add     s1, a1, t0
+    mv      s4, a3
+    mv      s5, a4
+    addi    t0, sp, 88
+    COPY32  t0, a0
+    li      t0, 88
+    sd      t0, SSZ_BYTES_SIZE(sp)
+    li      t0, SSZ_BYTES_FIXED
+    sd      t0, SSZ_BYTES_OFFSET(sp)
+    li      t0, 64
+    sd      t0, SSZ_BYTES_COUNT(sp)
+    li      s6, 0
+3:  bgeu    s6, s2, 6f
+    addi    t0, sp, SSZ_BYTES_FIXED
+    addi    t1, sp, (SSZ_BYTES_FIXED + 32)
+    addi    t2, sp, 88
+    srl     t3, s3, s6
+    andi    t3, t3, 1
+    beqz    t3, 4f
+    /* bit set: the branch node is on the left */
+    COPY32  t0, s1
+    COPY32  t1, t2
+    j       5f
+4:  COPY32  t0, t2
+    COPY32  t1, s1
+5:  mv      a0, sp
+    addi    a1, sp, 88
+    CALL_EXTERN crypto_sha256
+    addi    s1, s1, 32
+    addi    s6, s6, 1
+    j       3b
+6:  /* valid = 1 when the node equals root */
+    ld      t0, 88(sp)
+    ld      t1, 0(s4)
+    xor     t0, t0, t1
+    ld      t1, 96(sp)
+    ld      t2, 8(s4)
+    xor     t1, t1, t2
+    or      t0, t0, t1
+    ld      t1, 104(sp)
+    ld      t2, 16(s4)
+    xor     t1, t1, t2
+    or      t0, t0, t1
+    ld      t1, 112(sp)
+    ld      t2, 24(s4)
+    xor     t1, t1, t2
+    or      t0, t0, t1
+    seqz    t0, t0
+    sd      t0, 0(s5)
+    li      a0, SSZ_OK
+    j       90f
+81: li      a0, SSZ_NOT_A_GINDEX
+    j       90f
+82: li      a0, SSZ_ROOT_HAS_NO_BRANCH
+    j       90f
+83: li      a0, SSZ_BRANCH_LENGTH
+90: LEAVE   128
+END_FUNCTION ssz_verify_merkle_proof
 
 /* ---------------------------------------------------------------- Constants */
 

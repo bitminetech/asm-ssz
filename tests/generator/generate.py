@@ -19,6 +19,9 @@ import urllib.request
 
 import snappy
 from ruamel.yaml import YAML
+from ssz.chunks import Chunk, Root
+from ssz.exceptions import SSZValueError
+from ssz.verification import verify_merkle_proof
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import descriptor  # noqa: E402
@@ -43,7 +46,8 @@ CASE = re.compile(
 )
 
 MAGIC = b"SSZVEC01"
-KIND_STATIC, KIND_PROOF, KIND_GINDEX = 1, 2, 3
+KIND_STATIC, KIND_PROOF, KIND_GINDEX, KIND_VERIFY = 1, 2, 3, 4
+SSZ_INC = pathlib.Path(__file__).resolve().parents[2] / "include" / "ssz.inc"
 
 
 def fail(text):
@@ -138,7 +142,44 @@ def proof_case(out, ssz_type, name, files):
     index = out.descriptor(ssz_type)
     out.cases.append(blob(name.encode()) + u64(index) + blob(obj) + u64(int(proof["leaf_index"]))
                      + leaf + u64(len(branch)) + b"".join(branch))
-    return obj, int(proof["leaf_index"]), branch
+    return obj, int(proof["leaf_index"]), leaf, branch
+
+
+def status_codes():
+    """The status constants of include/ssz.inc, by fault name."""
+    return {m[1]: int(m[2]) for m in re.finditer(r"^\.set SSZ_(\w+), (\d+)", SSZ_INC.read_text(), re.M)}
+
+
+def flip(node):
+    """The node with its first bit changed."""
+    return bytes([node[0] ^ 1]) + node[1:]
+
+
+def verify_cases(out, codes, name, leaf, gindex, branch, root):
+    """
+    The case itself and changed copies of it. The spec's verify_merkle_proof gives
+    each expected result: a status, and for status 0 whether the root matches.
+    """
+    variants = [
+        ("as-given", leaf, gindex, branch, root),
+        ("leaf-changed", flip(leaf), gindex, branch, root),
+        ("root-changed", leaf, gindex, branch, flip(root)),
+        ("first-node-changed", leaf, gindex, [flip(branch[0])] + branch[1:], root),
+        ("last-node-changed", leaf, gindex, branch[:-1] + [flip(branch[-1])], root),
+        ("sibling-index", leaf, gindex ^ 1, branch, root),
+        ("node-missing", leaf, gindex, branch[:-1], root),
+        ("node-extra", leaf, gindex, branch + [root], root),
+        ("index-1", leaf, 1, [], root),
+        ("index-0", leaf, 0, branch, root),
+    ]
+    for label, v_leaf, v_gindex, v_branch, v_root in variants:
+        try:
+            status, valid = 0, int(verify_merkle_proof(Chunk(v_leaf), [Chunk(n) for n in v_branch],
+                                                       v_gindex, Root(v_root)))
+        except SSZValueError as e:
+            status, valid = codes[e.fault.name], 0
+        out.cases.append(blob(f"{name}/{label}".encode()) + v_leaf + u64(v_gindex) + v_root
+                         + u64(len(v_branch)) + b"".join(v_branch) + u64(status) + u64(valid))
 
 
 def gindex_cases(spec_dir):
@@ -177,6 +218,7 @@ def main():
                       text=True).stdout.strip() != COMMIT:
         fail(f"{spec_dir} is not consensus-specs at {COMMIT}")
     written = []
+    codes = status_codes()
 
     gindex = gindex_cases(spec_dir)
     count, digest = gindex.write(out_dir / "gindex.bin")
@@ -200,10 +242,13 @@ def main():
                         fail(f"{name}: the spec type does not give the case root")
             else:
                 out = outputs.setdefault((fork, "proof"), Output(KIND_PROOF))
-                obj, leaf_index, branch = proof_case(out, ssz_type, name, files)
+                obj, leaf_index, leaf, branch = proof_case(out, ssz_type, name, files)
                 value = ssz_type.decode_bytes(obj)
                 if [bytes(n) for n in spec.compute_merkle_proof(value, leaf_index)] != branch:
                     fail(f"{name}: the spec proof differs from the case branch")
+                verify = outputs.setdefault((fork, "verify"), Output(KIND_VERIFY))
+                verify_cases(verify, codes, name, leaf, leaf_index, branch,
+                             bytes(value.hash_tree_root()))
         for (fork, what), out in sorted(outputs.items()):
             file_name = f"{preset}-{fork}-{what}.bin"
             count, digest = out.write(out_dir / file_name)

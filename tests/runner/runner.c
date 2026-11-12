@@ -34,6 +34,8 @@ SSZ_ABI uint64_t ssz_hash_tree_root(const void *type, const void *value, void *s
 SSZ_ABI uint64_t ssz_get_generalized_index(const void *type, const void *path, void *gindex);
 SSZ_ABI uint64_t ssz_build_proof(const void *type, const void *value, const void *gindex, void *scratch,
                                  void *branch);
+SSZ_ABI uint64_t ssz_verify_merkle_proof(const void *leaf, const void *branch, const void *gindex,
+                                         const void *root, void *valid);
 
 #define GUARD 64
 #define FILL 0xA5
@@ -48,10 +50,10 @@ SSZ_ABI uint64_t ssz_build_proof(const void *type, const void *value, const void
 #define PAINT_WORDS ((STACK_CAP + 4096) / 8)
 #define PAINT_VALUE 0x5A5A5A5A5A5A5A5AULL
 
-enum { F_SER_SIZE, F_SER, F_DE_SIZE, F_DE, F_ROOT, F_GINDEX, F_PROOF, F_COUNT };
+enum { F_SER_SIZE, F_SER, F_DE_SIZE, F_DE, F_ROOT, F_GINDEX, F_PROOF, F_VERIFY, F_COUNT };
 static const char *const fn_name[F_COUNT] = {
     "ssz_serialize_size", "ssz_serialize", "ssz_deserialize_size", "ssz_deserialize",
-    "ssz_hash_tree_root", "ssz_get_generalized_index", "ssz_build_proof",
+    "ssz_hash_tree_root", "ssz_get_generalized_index", "ssz_build_proof", "ssz_verify_merkle_proof",
 };
 static volatile uint64_t *paint_low;
 static uint64_t stack_peak[F_COUNT], stack_calls[F_COUNT];
@@ -239,6 +241,32 @@ static int run_gindex(const type_t *t, const uint8_t *steps, uint64_t count, uin
     return ok;
 }
 
+static int run_verify(const uint8_t *leaf, uint64_t gindex, const uint8_t *root, const uint8_t *nodes,
+                      uint64_t count, uint64_t want_status, uint64_t want_valid, const char **why) {
+    uint8_t *l = buffer(32), *r = buffer(32), *g = buffer(8), *valid = buffer(8);
+    uint64_t bsize = 24 + 32 * count;
+    uint8_t *branch = buffer(bsize);
+    memcpy(l, leaf, 32);
+    memcpy(r, root, 32);
+    wr64(g, gindex);
+    wr64(branch, bsize);
+    wr64(branch + 8, 24);
+    wr64(branch + 16, count);
+    memcpy(branch + 24, nodes, (size_t)(32 * count));
+    int ok = 0;
+    uint64_t st = CALL(F_VERIFY, ssz_verify_merkle_proof(l, branch, g, r, valid));
+    if (st != want_status) *why = "verify_merkle_proof status";
+    else if (st == 0 && rd64(valid) != want_valid) *why = "verify_merkle_proof valid";
+    else if (!guard_ok(valid, 8)) *why = "out of bounds write";
+    else ok = 1;
+    free(l);
+    free(r);
+    free(g);
+    free(valid);
+    free(branch);
+    return ok;
+}
+
 static uint8_t *read_file(const char *path, size_t *len) {
     FILE *f = fopen(path, "rb");
     if (!f) return NULL;
@@ -285,7 +313,7 @@ static int run_file(const char *dir, const char *name) {
     for (uint64_t k = 0; k < ncases; k++) {
         uint64_t nlen = take64(&c);
         const char *cname = (const char *)take(&c, nlen);
-        const type_t *t = &types[take64(&c)];
+        const type_t *t = kind == 4 ? NULL : &types[take64(&c)];
         const char *why = NULL;
         int ok;
         if (kind == 1) {
@@ -303,6 +331,14 @@ static int run_file(const char *dir, const char *name) {
             uint64_t count = take64(&c);
             const uint8_t *steps = take(&c, 8 * count);
             ok = run_gindex(t, steps, count, take64(&c), &why);
+        } else if (kind == 4) {
+            const uint8_t *leaf = take(&c, 32);
+            uint64_t gindex = take64(&c);
+            const uint8_t *root = take(&c, 32);
+            uint64_t count = take64(&c);
+            const uint8_t *nodes = take(&c, 32 * count);
+            uint64_t want_status = take64(&c);
+            ok = run_verify(leaf, gindex, root, nodes, count, want_status, take64(&c), &why);
         } else {
             fprintf(stderr, "%s: unknown kind\n", name);
             exit(2);

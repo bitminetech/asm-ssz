@@ -30,7 +30,7 @@ tests/runner/macos.sh ~/.cache/asm-ssz/vectors
 
 | Check | Fails when |
 |---|---|
-| Results | A status, encoding, size, root or branch differs from the case |
+| Results | A status, encoding, size, root, branch or `valid` result differs from the case |
 | Buffers | A function writes into the 64 guard bytes after any buffer |
 | Stack | A call uses more than the README stack cap |
 
