@@ -1,67 +1,195 @@
 # Generalized indices and proofs
 
-Spec: [ssz-specs@v0.1.0](https://github.com/ethereum/ssz-specs/tree/7bce07ff7d51b1a3c66ff4e2bd3233ac248ede70/src/ssz), `paths.py` (`get_generalized_index`), `gindex.py` and `proofs.py` (`build_proof`, `node_root`). consensus-specs uses them as `get_generalized_index` and `compute_merkle_proof`.
+## Contents
 
-Types: [types.md](types.md), [serialization.md](serialization.md) and [merkleization.md](merkleization.md). Every argument is public data.
+- Function [`ssz_get_generalized_index`](#function-ssz_get_generalized_index): finds the tree node that a path names.
+- Function [`ssz_build_proof`](#function-ssz_build_proof): builds the Merkle branch for one tree node.
+- Type [`Path`](#type-path): a list of steps from the root of a type.
+- Type [`GeneralizedIndex`](#type-generalizedindex): the position of one tree node.
+- Type [`Branch`](#type-branch): a list of tree nodes.
 
-### `Path`
+## Spec
 
-A standalone list with one field, as ARCHITECTURE.md section 6 defines it, whose entries are unsigned 8-byte steps.
+- Document: [ssz-specs v0.1.0](https://github.com/ethereum/ssz-specs/tree/7bce07ff7d51b1a3c66ff4e2bd3233ac248ede70/src/ssz), the version that consensus-specs v1.7.0-beta.4 pins.
+- Section: `get_generalized_index` in `paths.py`, `gindex.py`, and `build_proof` and `node_root` in `proofs.py`.
+- consensus-specs calls them `get_generalized_index` and `compute_merkle_proof`.
 
-- `size` This unsigned 8-byte number gives the total buffer size in bytes.
-- `offset` This unsigned 8-byte number gives the start of the step part, in bytes from the buffer start.
-- `count` This unsigned 8-byte number gives the number of steps.
+## Function `ssz_get_generalized_index`
 
-A step is a field index in a container, an element position in a vector or a list, or `0xffffffffffffffff` for the length that a list mixes in (`"__len__"` in the spec). The caller turns field names into field indices.
+Finds the generalized index of the tree node that a path names.
 
-### `GeneralizedIndex`
+### Signature
 
-- `index` This unsigned 8-byte number holds a generalized index, which is 1 for the root.
+```
+ssz_get_generalized_index(type, path, gindex) -> status
+```
 
-### `Branch`
+### Arguments
 
-A standalone list with one field, whose entries are `Root` values of 32 bytes.
+| Name | Role | Type |
+|---|---|---|
+| `type` | input | `TypeDescriptor` |
+| `path` | input | `Path` |
+| `gindex` | output | `GeneralizedIndex` |
 
-- `size` This unsigned 8-byte number gives the total buffer size in bytes.
-- `offset` This unsigned 8-byte number gives the start of the node part, in bytes from the buffer start.
-- `count` This unsigned 8-byte number gives the number of nodes.
+`TypeDescriptor` is in [serialization.md](serialization.md).
 
-### `ssz_get_generalized_index(type, path, gindex)`
+### Returns
 
-- `type` This input is a well-formed `TypeDescriptor`, and the function does not validate it.
-- `path` This input is a well-formed `Path` whose steps are unvalidated.
-- `gindex` This output is a `GeneralizedIndex` buffer of 8 bytes.
+- `SSZ_OK`: `gindex` holds the index.
+- A path refusal constant from [include/ssz.inc](../../include/ssz.inc): a step breaks a v0.1.0 rule. It names the first fault that v0.1.0 raises.
+- `SSZ_GINDEX_TOO_LARGE`: the index needs more than 64 bits.
 
-Requirements: The function walks `path` from the root of the described type as v0.1.0 `get_generalized_index` walks it, and writes the index of the node it names. It refuses a step as v0.1.0 refuses it, with the status of the first fault. It refuses an index that needs more than 64 bits with `SSZ_GINDEX_TOO_LARGE`.
+### Caller must
 
-ABI: The core ABI of ARCHITECTURE.md section 6. The symbol is `ssz_get_generalized_index` (`_ssz_get_generalized_index` in Mach-O). The pointer arguments are `type`, `path`, then `gindex`.
+- Pass a valid `TypeDescriptor` in `type`. It is not checked.
+- Pass a valid `Path` header in `path`. The steps in it can be anything.
+- Keep `gindex` apart from the inputs.
 
-Effects and ownership: Effect-free.
+### Function does
 
-Bounds: `gindex` is 8 bytes. The function needs no scratch.
+- Walks `path` from the root of the type, as v0.1.0 `get_generalized_index` walks it.
+- Writes the index of the node it reaches.
 
-Outputs: `gindex`, laid out as `GeneralizedIndex`.
+### Function never
 
-Status: `0`, or `18` to `23` for a refused path.
+- Reads outside the `Path` header and its `count` steps.
+- Writes outside `gindex` and its own stack.
+- Keeps a pointer after it returns.
+- Makes an OS call.
 
-### `ssz_build_proof(type, value, gindex, scratch, branch)`
+### ABI
 
-- `type` This input is a well-formed `TypeDescriptor`, and the function does not validate it.
-- `value` This input is a well-formed value of the described type, and the function does not validate it.
-- `gindex` This input is a `GeneralizedIndex` whose index is unvalidated.
-- `scratch` This scratch buffer holds at least `scratch` bytes of the root node.
-- `branch` This output is a `Branch` whose `size` header gives its accessible extent.
+- Symbol: `ssz_get_generalized_index` (`_ssz_get_generalized_index` on macOS).
+- Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
+- Argument order: `type`, `path`, `gindex`.
 
-Requirements: The function writes the branch for `gindex` as v0.1.0 `build_proof` builds it: the root of the sibling of each node on the path, from the node up to the root, read with `node_root`. For index 1 the branch is empty. It refuses an index as v0.1.0 `node_root` refuses it. It sets `offset` to 24 and `count` to the number of nodes, and it does not change `size`. It hashes with `crypto_sha256` from asm-crypto. `branch` and `scratch` do not overlap each other or the inputs.
+## Function `ssz_build_proof`
 
-ABI: As `ssz_get_generalized_index`, with the pointer arguments `type`, `value`, `gindex`, `scratch`, then `branch`.
+Builds the Merkle branch for one tree node of a value.
 
-Effects and ownership: Effect-free.
+### Signature
 
-Bounds: For an index `i` of at least 1, `branch` needs `24 + 32 * floor(log2(i))` bytes. `scratch` needs the root node's `scratch` bytes.
+```
+ssz_build_proof(type, value, gindex, scratch, branch) -> status
+```
 
-Outputs: `branch`, laid out as `Branch`.
+### Arguments
 
-Status: `0`. `24` to `27` for a refused index, checked before capacity. `1` (`BUFFER_TOO_SMALL`) when `branch` or `scratch` is too small.
+| Name | Role | Type |
+|---|---|---|
+| `type` | input | `TypeDescriptor` |
+| `value` | input | `Value` |
+| `gindex` | input | `GeneralizedIndex` |
+| `scratch` | scratch | `Scratch` |
+| `branch` | output | `Branch` |
+
+`TypeDescriptor`, `Value` and `Scratch` are in [serialization.md](serialization.md).
+
+### Returns
+
+- `SSZ_OK`: `branch` holds the branch.
+- A proof refusal constant from [include/ssz.inc](../../include/ssz.inc): the value's tree does not reach `gindex`. It names the first fault that v0.1.0 raises. This is checked before any capacity.
+- `SSZ_BUFFER_TOO_SMALL`: `branch` or `scratch` is too small. `branch` is then invalid.
+
+### Caller must
+
+- Pass a valid `TypeDescriptor` in `type`. It is not checked.
+- Pass a valid `Value` of that type in `value`. It is not checked.
+- Pass a `GeneralizedIndex` in `gindex`. Its index can be anything.
+- Set the `size` field of `branch` and of `scratch` to their buffer sizes.
+- Keep `branch` and `scratch` apart from each other and from the inputs.
+
+### Function does
+
+- Builds the branch as v0.1.0 `build_proof` builds it.
+- Writes the sibling of each node on the path, from the node up to the root.
+- Reads each sibling with v0.1.0 `node_root`.
+- Writes an empty branch for index 1.
+- Sets `offset` of `branch` to 24 and `count` to the number of nodes.
+- Keeps the `size` field of `branch`.
+- Hashes with `crypto_sha256` from asm-crypto.
+
+### Function never
+
+- Writes outside `branch`, `scratch` and its own stack.
+- Keeps a pointer after it returns.
+- Makes an OS call.
+
+### Limits
+
+- `branch`: 24 + 32 × floor(log2(index)) bytes.
+- `scratch`: the `scratch` bytes of the root `TypeNode`.
+
+### ABI
+
+- Symbol: `ssz_build_proof` (`_ssz_build_proof` on macOS).
+- Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
+- Argument order: `type`, `value`, `gindex`, `scratch`, `branch`.
+
+## Type `Path`
+
+A list of steps from the root of a type.
+
+### Layout
+
+| Offset | Field | Type | Meaning |
+|---|---|---|---|
+| 0 | `size` | u64 | Total buffer size in bytes |
+| 8 | `offset` | u64 | Where the steps start, from the buffer start |
+| 16 | `count` | u64 | Number of steps |
+
+### Rules
+
+- Each step is a u64.
+- A step is a field index in a container, a position in a vector or list, or `SSZ_STEP_LENGTH` for the length that a list mixes in (`"__len__"` in the spec).
+- The caller turns field names into field indices.
+- The buffer starts at a multiple of 8.
+- `offset` is at least 24 and a multiple of 8.
+- `offset + 8 × count` is at most `size`.
+
+## Type `GeneralizedIndex`
+
+The position of one tree node.
+
+### Layout
+
+| Offset | Field | Type | Meaning |
+|---|---|---|---|
+| 0 | `index` | u64 | The generalized index |
+
+### Rules
+
+- Index 1 is the root.
+- The buffer starts at a multiple of 8.
+
+## Type `Branch`
+
+A list of tree nodes.
+
+### Layout
+
+| Offset | Field | Type | Meaning |
+|---|---|---|---|
+| 0 | `size` | u64 | Total buffer size in bytes |
+| 8 | `offset` | u64 | Where the nodes start, from the buffer start |
+| 16 | `count` | u64 | Number of nodes |
+
+### Rules
+
+- Each node is a `Root` from [merkleization.md](merkleization.md).
+- The buffer starts at a multiple of 8.
+- `offset` is at least 24 and a multiple of 8.
+- `offset + 32 × count` is at most `size`.
+
+## Test vectors
+
+- Proofs: consensus-specs v1.7.0-beta.4, `merkle_proof/single_merkle_proof` and `light_client/single_merkle_proof` tests, phase0 to fulu, mainnet and minimal presets, from the archives in [serialization.md](serialization.md#test-vectors).
+  - Check: the Python spec's `compute_merkle_proof` gives the same branch.
+- Generalized indices: the constant tables at [consensus-specs@aa16bb4](https://github.com/ethereum/consensus-specs/tree/aa16bb4c156184e9548a997d53efaf2a228a6304). Each row states a path and its index.
+  - Files: `specs/altair/light-client/sync-protocol.md`, `specs/capella/light-client/sync-protocol.md`, `specs/electra/light-client/sync-protocol.md`.
+  - Check: the Python spec's `get_generalized_index` gives the stated index.
+
+## Results
 
 <!-- CI generates the tick table for each function here. -->

@@ -1,6 +1,6 @@
 """The descriptor builder: turn an ssz-specs v0.1.0 type into a binary TypeDescriptor.
 
-The layout rules are in docs/reference/types.md; the field offsets are in
+The layout rules are in docs/reference/serialization.md; the field offsets are in
 include/ssz.inc. The builder computes every in-memory position, so the assembly
 only reads numbers. It refuses any kind outside the live-fork scope.
 """

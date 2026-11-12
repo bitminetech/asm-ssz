@@ -1,32 +1,93 @@
 # Merkleization
 
-Spec: [ssz-specs@v0.1.0](https://github.com/ethereum/ssz-specs/tree/7bce07ff7d51b1a3c66ff4e2bd3233ac248ede70/src/ssz), `roots.py` (`hash_tree_root`), `layout.py`, `trees.py` (`merkleize`), `mixins.py` (`mix_in_length`) and `chunks.py`.
+## Contents
 
-Types: [types.md](types.md) and [serialization.md](serialization.md). Every argument is public data.
+- Function [`ssz_hash_tree_root`](#function-ssz_hash_tree_root): computes the hash tree root of a value.
+- Type [`Root`](#type-root): a Merkle root or tree node.
 
-### `Root`
+## Spec
 
-A fixed-size value of 32 bytes with no size header. The buffer starts at a multiple of 8.
+- Document: [ssz-specs v0.1.0](https://github.com/ethereum/ssz-specs/tree/7bce07ff7d51b1a3c66ff4e2bd3233ac248ede70/src/ssz), the version that consensus-specs v1.7.0-beta.4 pins.
+- Section: `hash_tree_root` in `roots.py`, with `layout.py`, `merkleize` in `trees.py`, `mix_in_length` in `mixins.py`, and `chunks.py`.
 
-- `bytes` These 32 bytes hold a Merkle root or a tree node.
+## Function `ssz_hash_tree_root`
 
-### `ssz_hash_tree_root(type, value, scratch, root)`
+Computes the hash tree root of a value.
 
-- `type` This input is a well-formed `TypeDescriptor`, and the function does not validate it.
-- `value` This input is a well-formed value of the described type, and the function does not validate it.
-- `scratch` This scratch buffer holds at least `scratch` bytes of the root node.
-- `root` This output is a `Root` buffer of 32 bytes that receives the hash tree root.
+### Signature
 
-Requirements: The function computes `hash_tree_root` of `value` as v0.1.0 computes it: basic values and byte and bit sequences are packed into 32-byte chunks; composite values use the roots of their elements or fields; `merkleize` pads to the next power of two of the type's chunk count; lists, byte lists and bit lists mix in their length with `mix_in_length`. It hashes with `crypto_sha256` from asm-crypto. The previous contents of `root` do not change the result. `root` and `scratch` do not overlap each other or the inputs.
+```
+ssz_hash_tree_root(type, value, scratch, root) -> status
+```
 
-ABI: The core ABI of ARCHITECTURE.md section 6. The symbol is `ssz_hash_tree_root` (`_ssz_hash_tree_root` in Mach-O). The pointer arguments are `type`, `value`, `scratch`, then `root`.
+### Arguments
 
-Effects and ownership: Effect-free.
+| Name | Role | Type |
+|---|---|---|
+| `type` | input | `TypeDescriptor` |
+| `value` | input | `Value` |
+| `scratch` | scratch | `Scratch` |
+| `root` | output | `Root` |
 
-Bounds: `root` is 32 bytes. `scratch` needs the root node's `scratch` bytes. The stack bound is in the README, and it includes `crypto_sha256`.
+`TypeDescriptor`, `Value` and `Scratch` are in [serialization.md](serialization.md).
 
-Outputs: `root`, laid out as `Root`.
+### Returns
 
-Status: `0`, or `1` (`BUFFER_TOO_SMALL`) when `scratch` is too small.
+- `SSZ_OK`: `root` holds the hash tree root.
+- `SSZ_BUFFER_TOO_SMALL`: `scratch` is too small.
+
+### Caller must
+
+- Pass a valid `TypeDescriptor` in `type`. It is not checked.
+- Pass a valid `Value` of that type in `value`. It is not checked.
+- Set the `size` field of `scratch` to its buffer size.
+- Keep `root` and `scratch` apart from each other and from the inputs.
+
+### Function does
+
+- Computes `hash_tree_root` as v0.1.0 computes it.
+- Packs basic values, byte strings and bit strings into 32 byte chunks.
+- Uses the roots of elements and fields for composite values.
+- Pads each tree to the next power of two of the type's chunk count.
+- Mixes in the length of each list, byte list and bit list.
+- Hashes with `crypto_sha256` from asm-crypto.
+- Ignores what `root` held before.
+
+### Function never
+
+- Writes outside `root`, `scratch` and its own stack.
+- Keeps a pointer after it returns.
+- Makes an OS call.
+
+### Limits
+
+- `scratch`: the `scratch` bytes of the root `TypeNode`.
+
+### ABI
+
+- Symbol: `ssz_hash_tree_root` (`_ssz_hash_tree_root` on macOS).
+- Convention: the core ABI for each ISA (ARCHITECTURE.md section 6).
+- Argument order: `type`, `value`, `scratch`, `root`.
+
+## Type `Root`
+
+A Merkle root or tree node.
+
+### Layout
+
+| Offset | Field | Type | Meaning |
+|---|---|---|---|
+| 0 | `bytes` | 32 bytes | The root |
+
+### Rules
+
+- 32 bytes.
+- The buffer starts at a multiple of 8.
+
+## Test vectors
+
+- The roots of the `ssz_static` cases in [serialization.md](serialization.md#test-vectors).
+
+## Results
 
 <!-- CI generates the tick table for each function here. -->

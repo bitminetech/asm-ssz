@@ -1,7 +1,7 @@
 /*
  * asm-ssz shared definitions, in assembler syntax.
  * Every core file includes this file with .include.
- * Layouts are described in docs/reference/types.md.
+ * Layouts are described in docs/reference/serialization.md.
  * Requirements for each function are in docs/reference/.
  */
 
