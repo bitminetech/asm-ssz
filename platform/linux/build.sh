@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the asm-ssz library and the test runner for one Linux ISA.
+# Build the asm-ssz library, the test runner and the bench for one Linux ISA.
 # Usage: platform/linux/build.sh ISA OUT_DIR    (ISA: x86_64, arm64 or riscv64)
 # Runs inside the image from platform/linux/Dockerfile, after platform/deps.sh.
 set -eu
@@ -26,3 +26,7 @@ clang --target=$target $march -I"$crypto/include" -I"$crypto/platform/linux" \
 # Test runner (C), linked statically so QEMU user mode needs no target libraries.
 clang --target=$target $march -std=c11 -O2 -Wall -Wextra -Werror -static -fuse-ld=lld \
     "$root/tests/runner/runner.c" "$out/libasm-ssz.a" "$out/sha256.o" -o "$out/runner"
+
+# Bench (C), linked the same way.
+clang --target=$target $march -std=c11 -O2 -Wall -Wextra -Werror -static -fuse-ld=lld \
+    "$root/bench/bench.c" "$out/libasm-ssz.a" "$out/sha256.o" -o "$out/bench"

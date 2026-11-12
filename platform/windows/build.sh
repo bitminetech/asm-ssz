@@ -1,8 +1,8 @@
 #!/bin/sh
-# Build the asm-ssz library and the test runner for one Windows ISA.
+# Build the asm-ssz library, the test runner and the bench for one Windows ISA.
 # Usage: platform/windows/build.sh ISA OUT_DIR    (ISA: x86_64 or arm64)
 # Runs inside the image from platform/linux/Dockerfile, after platform/deps.sh.
-# The library uses the pinned LLVM; the test runner uses llvm-mingw for the Windows C runtime.
+# The library uses the pinned LLVM; the test runner and the bench use llvm-mingw for the Windows C runtime.
 set -eu
 isa=$1
 out=$2
@@ -25,3 +25,5 @@ clang --target=$target $march -I"$crypto/include" -I"$crypto/platform/windows" \
 
 /opt/llvm-mingw/bin/$mingw-clang $march -std=c11 -O2 -Wall -Wextra -Werror -static \
     "$root/tests/runner/runner.c" "$out/libasm-ssz.a" "$out/sha256.o" -o "$out/runner.exe"
+/opt/llvm-mingw/bin/$mingw-clang $march -std=c11 -O2 -Wall -Wextra -Werror -static \
+    "$root/bench/bench.c" "$out/libasm-ssz.a" "$out/sha256.o" -ladvapi32 -o "$out/bench.exe"

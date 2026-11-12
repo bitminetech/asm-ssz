@@ -2,7 +2,7 @@
 # Build the asm-ssz library for one macOS ISA.
 # Usage: platform/macos/build.sh ISA OUT_DIR    (ISA: x86_64 or arm64)
 # Runs inside the image from platform/linux/Dockerfile, after platform/deps.sh, so
-# the library uses the pinned LLVM. link-runner.sh links the test runner on a Mac.
+# the library uses the pinned LLVM. link-runner.sh and link-bench.sh link the test runner and the bench on a Mac.
 set -eu
 isa=$1
 out=$2

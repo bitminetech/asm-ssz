@@ -2,7 +2,7 @@
 
 SimpleSerialize (SSZ) for Ethereum, in assembly.
 
-Standard: [asm-standard@90ddb72](https://github.com/bitminetech/asm-standard/blob/90ddb728ec7070b9e1ce4dab44dd48050c3464fd/ARCHITECTURE.md)
+Standard: [asm-standard@2a19d3f](https://github.com/bitminetech/asm-standard/blob/2a19d3f7fa737af1c01720b6e891703e53a682aa/ARCHITECTURE.md)
 
 ## Reference
 
@@ -32,8 +32,8 @@ Standard: [asm-standard@90ddb72](https://github.com/bitminetech/asm-standard/blo
 | Used for | Tool |
 |---|---|
 | Library | LLVM 23.1.5, official release (`clang`, `llvm-ar`, `lld`) |
-| Windows test runner | [llvm-mingw 20261104](https://github.com/mstorsjo/llvm-mingw/releases/tag/20261104) (LLVM 23.1.5) |
-| macOS test runner | The host Xcode clang, because it needs the macOS SDK |
+| Windows test runner and bench | [llvm-mingw 20261104](https://github.com/mstorsjo/llvm-mingw/releases/tag/20261104) (LLVM 23.1.5) |
+| macOS test runner and bench | The host Xcode clang, because it needs the macOS SDK |
 | Build image | [platform/linux/Dockerfile](platform/linux/Dockerfile) on `debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2` |
 
 ## Tests
@@ -42,6 +42,7 @@ Standard: [asm-standard@90ddb72](https://github.com/bitminetech/asm-standard/blo
 |---|---|
 | Vector generator | [tests/generator/](tests/generator/) |
 | Test runner | [tests/runner/](tests/runner/) |
+| Bench | [bench/](bench/) |
 
 ## Target profile
 
@@ -66,3 +67,11 @@ Standard: [asm-standard@90ddb72](https://github.com/bitminetech/asm-standard/blo
 | Item | Value |
 |---|---|
 | Type descriptors | The caller supplies one for each SSZ type it uses, made by [tests/generator/descriptor.py](tests/generator/descriptor.py) |
+
+## Benchmark machines
+
+| ISA | CPU |
+|---|---|
+| x86-64 | The CPU of the GitHub runners `ubuntu-24.04`, `windows-2025` and `macos-15-intel`. Each bench run prints it. |
+| ARM64 | The CPU of the GitHub runners `ubuntu-24.04-arm`, `windows-11-arm` and `macos-15`, and Apple M series Macs. Each bench run prints it. |
+| RISC-V | Run only, under QEMU on `ubuntu-24.04-arm`. Its times are not measurements. |

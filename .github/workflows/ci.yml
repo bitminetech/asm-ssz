@@ -1,6 +1,7 @@
 # Generate the vectors and build every target with the pinned toolchain, then
-# run every vector file on each of the 7 supported targets (ARCHITECTURE.md
-# sections 1 and 10).
+# run every vector file and the bench on each of the 7 supported targets
+# (ARCHITECTURE.md sections 1, 9 and 10). RISC-V runs under QEMU, so its bench
+# run only checks that the bench works.
 name: ci
 
 on:
@@ -51,6 +52,15 @@ jobs:
         run: |
           chmod +x build/linux-${{ matrix.isa }}/runner
           ${{ matrix.qemu }} build/linux-${{ matrix.isa }}/runner vectors $(cd vectors && ls *.bin)
+      - name: Bench
+        run: |
+          set -o pipefail
+          chmod +x build/linux-${{ matrix.isa }}/bench
+          ${{ matrix.qemu }} build/linux-${{ matrix.isa }}/bench run vectors ${{ matrix.qemu && '--quick' || '' }} | tee bench-linux-${{ matrix.isa }}.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: bench-linux-${{ matrix.isa }}
+          path: bench-linux-${{ matrix.isa }}.txt
 
   windows:
     needs: build
@@ -72,6 +82,15 @@ jobs:
           $files = Get-ChildItem vectors -Filter *.bin | ForEach-Object { $_.Name }
           & "build/windows-${{ matrix.isa }}/runner.exe" vectors @files
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Bench
+        shell: pwsh
+        run: |
+          & "build/windows-${{ matrix.isa }}/bench.exe" run vectors | Tee-Object bench-windows-${{ matrix.isa }}.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: bench-windows-${{ matrix.isa }}
+          path: bench-windows-${{ matrix.isa }}.txt
 
   macos:
     needs: build
@@ -90,3 +109,11 @@ jobs:
         with: { name: vectors, path: vectors }
       - name: Run vectors
         run: tests/runner/macos.sh vectors
+      - name: Bench
+        run: |
+          set -o pipefail
+          bench/macos.sh vectors | tee bench-macos-${{ matrix.isa }}.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: bench-macos-${{ matrix.isa }}
+          path: bench-macos-${{ matrix.isa }}.txt
