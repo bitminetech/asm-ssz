@@ -66,6 +66,18 @@ static const char *const fn_name[F_COUNT] = {
 static volatile uint64_t *paint_low;
 static uint64_t stack_peak[F_COUNT], stack_calls[F_COUNT];
 
+/* The functions that the cases of each file kind test, in enum order, and the files that tested each function. */
+static const int kind_tests[7][F_COUNT] = {
+    {0},
+    {1, 1, 1, 1, 1, 0, 0, 0}, /* 1, static: decode, encode, root */
+    {0, 0, 1, 1, 0, 0, 1, 0}, /* 2, proof: decode, build_proof */
+    {0, 0, 0, 0, 0, 1, 0, 0}, /* 3, generalized index */
+    {0, 0, 0, 0, 0, 0, 0, 1}, /* 4, verify */
+    {0, 0, 1, 1, 0, 0, 0, 0}, /* 5, reject: both deserialize functions */
+    {0, 0, 1, 1, 0, 0, 1, 0}, /* 6, proof outcome: decode, build_proof */
+};
+static uint64_t fn_files[F_COUNT], fn_failed_files[F_COUNT];
+
 __attribute__((noinline)) static void paint(void) {
     volatile uint64_t area[PAINT_WORDS];
     for (size_t i = 0; i < PAINT_WORDS; i++) area[i] = PAINT_VALUE;
@@ -360,6 +372,10 @@ static int run_file(const char *dir, const char *name) {
         exit(2);
     }
     uint64_t kind = take64(&c), ntypes = take64(&c);
+    if (kind < 1 || kind > 6) {
+        fprintf(stderr, "%s: unknown kind\n", name);
+        exit(2);
+    }
     type_t *types = calloc((size_t)ntypes, sizeof *types);
     for (uint64_t i = 0; i < ntypes; i++) {
         uint64_t n = take64(&c);
@@ -427,6 +443,11 @@ static int run_file(const char *dir, const char *name) {
     }
     printf("%s %s: %llu cases, %llu failed\n", bad ? "FAIL" : "PASS", name,
            (unsigned long long)ncases, (unsigned long long)bad);
+    for (int fn = 0; fn < F_COUNT; fn++) {
+        if (!kind_tests[kind][fn]) continue;
+        fn_files[fn]++;
+        if (bad) fn_failed_files[fn]++;
+    }
     for (uint64_t i = 0; i < ntypes; i++) free(types[i].desc);
     free(types);
     free(data);
@@ -446,6 +467,10 @@ int main(int argc, char **argv) {
         printf("%s stack %s: %llu bytes, cap %d\n", over ? "FAIL" : "PASS", fn_name[fn],
                (unsigned long long)stack_peak[fn], STACK_CAP);
         failed |= over;
+        if (over) fn_failed_files[fn]++;
     }
+    /* One verdict for each function: every file that tests it passed, within the stack cap. */
+    for (int fn = 0; fn < F_COUNT; fn++)
+        printf("FUNCTION %s %s\n", fn_name[fn], fn_files[fn] && !fn_failed_files[fn] ? "PASS" : "FAIL");
     return failed;
 }

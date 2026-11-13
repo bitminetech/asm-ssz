@@ -1,6 +1,7 @@
 #!/bin/sh
-# Build the library for all 7 supported targets, and the test runners for
-# Linux and Windows, into build/<os>-<isa>/.
+# Build the library for all 7 supported targets, and the test runners and
+# benches for Linux and Windows, into build/<os>-<isa>/. Then check every
+# library against the declared interface and the frame rules (check.py).
 # Runs inside the image from platform/linux/Dockerfile, from the repo root.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -11,3 +12,4 @@ for isa in x86_64 arm64; do
     platform/windows/build.sh $isa build/windows-$isa
     platform/macos/build.sh $isa build/macos-$isa
 done
+python3 -I platform/check.py
