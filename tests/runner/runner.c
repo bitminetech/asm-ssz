@@ -11,8 +11,9 @@
  * bytes after it, and output buffers start filled with 0xA5, so a write out of
  * bounds or a read of old output contents shows up as a failure.
  *
- * Every library call also runs on a painted stack. The runner prints the most
- * stack each function used and fails when a call uses more than the README cap.
+ * Every library call goes through abi_call (tests/runner/abi_<ISA>.s). The
+ * runner prints the most stack each function used, and fails when a call uses
+ * more than the README cap or changes state that the ABI says it must keep.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -49,22 +50,26 @@ static const char *status_differs(const char *function, uint64_t got, uint64_t w
 }
 
 /*
- * Stack check. paint() fills the stack below the caller with a pattern, then
- * the library call runs in that area, then stack_check() finds the lowest word
- * the call changed. The count starts at the top of the painted area, so it
- * leaves out the few bytes of paint's own frame above it.
+ * ABI and stack check. abi_call sets every register the callee must keep to a
+ * known value and paints PAINT_BYTES of stack below the call. Afterwards it
+ * reports the kept state that changed, and the bytes of stack the call used,
+ * its return address included on x86-64.
  */
 #define STACK_CAP 6144 /* README: stack per call */
-#define PAINT_WORDS ((STACK_CAP + 4096) / 8)
-#define PAINT_VALUE 0x5A5A5A5A5A5A5A5AULL
+#define PAINT_BYTES (STACK_CAP + 4096)
+
+/* The record that abi_call reads and writes. The layout is in README.md. */
+typedef struct {
+    uint64_t fn, arg[5], paint, status, fault, stack, scratch[4];
+} abi_ctx;
+SSZ_ABI void abi_call(abi_ctx *ctx);
 
 enum { F_SER_SIZE, F_SER, F_DE_SIZE, F_DE, F_ROOT, F_GINDEX, F_PROOF, F_VERIFY, F_COUNT };
 static const char *const fn_name[F_COUNT] = {
     "ssz_serialize_size", "ssz_serialize", "ssz_deserialize_size", "ssz_deserialize",
     "ssz_hash_tree_root", "ssz_get_generalized_index", "ssz_build_proof", "ssz_verify_merkle_proof",
 };
-static volatile uint64_t *paint_low;
-static uint64_t stack_peak[F_COUNT], stack_calls[F_COUNT];
+static uint64_t stack_peak[F_COUNT], stack_calls[F_COUNT], abi_fault[F_COUNT];
 
 /* The functions that the cases of each file kind test, in enum order, and the files that tested each function. */
 static const int kind_tests[7][F_COUNT] = {
@@ -78,23 +83,23 @@ static const int kind_tests[7][F_COUNT] = {
 };
 static uint64_t fn_files[F_COUNT], fn_failed_files[F_COUNT];
 
-__attribute__((noinline)) static void paint(void) {
-    volatile uint64_t area[PAINT_WORDS];
-    for (size_t i = 0; i < PAINT_WORDS; i++) area[i] = PAINT_VALUE;
-    paint_low = area;
-}
-
-__attribute__((noinline)) static uint64_t stack_check(int fn, uint64_t status) {
-    size_t i = 0;
-    while (i < PAINT_WORDS && paint_low[i] == PAINT_VALUE) i++;
-    uint64_t used = 8 * (uint64_t)(PAINT_WORDS - i);
-    if (used > stack_peak[fn]) stack_peak[fn] = used;
+/* Call the library function f with its pointer arguments, through abi_call. */
+static uint64_t checked_call(int fn, uint64_t f, const void *const *args, size_t n) {
+    abi_ctx c;
+    memset(&c, 0, sizeof c);
+    c.fn = f;
+    for (size_t i = 0; i < n; i++) c.arg[i] = (uint64_t)(uintptr_t)args[i];
+    c.paint = PAINT_BYTES;
+    abi_call(&c);
+    if (c.stack > stack_peak[fn]) stack_peak[fn] = c.stack;
     stack_calls[fn]++;
-    return status;
+    abi_fault[fn] |= c.fault;
+    return c.status;
 }
 
-/* Call the library function fn with a stack check. */
-#define CALL(fn, call) (paint(), stack_check(fn, call))
+#define CALL(fn, f, ...)                                                                                       \
+    checked_call(fn, (uint64_t)(uintptr_t)(f), (const void *const[]){__VA_ARGS__},                             \
+                 sizeof((const void *const[]){__VA_ARGS__}) / sizeof(const void *))
 
 static uint64_t rd64(const uint8_t *p) {
     uint64_t v = 0;
@@ -166,14 +171,14 @@ static uint8_t *decode(const type_t *t, const uint8_t *enc, uint64_t len, uint64
     wr64(ser + 16, len);
     memcpy(ser + off, enc, (size_t)len);
     uint8_t *scr = scratch_for(t);
-    uint64_t size = 0, st = CALL(F_DE_SIZE, ssz_deserialize_size(t->desc, ser, scr, &size));
+    uint64_t size = 0, st = CALL(F_DE_SIZE, ssz_deserialize_size, t->desc, ser, scr, &size);
     uint8_t *value = NULL;
     if (st != 0) {
         *why = "deserialize_size status";
     } else {
         value = buffer(size);
         if (t->ssz_size == 0) wr64(value, size);
-        st = CALL(F_DE, ssz_deserialize(t->desc, ser, scr, value));
+        st = CALL(F_DE, ssz_deserialize, t->desc, ser, scr, value);
         if (st != 0) *why = "deserialize status";
         else if (!guard_ok(value, size) || !guard_ok(scr, t->scratch_size) || !guard_ok(ser, ssize))
             *why = "deserialize wrote out of bounds";
@@ -196,18 +201,18 @@ static int run_static(const type_t *t, const uint8_t *enc, uint64_t len, const u
     uint8_t *scr = scratch_for(t);
     uint64_t need = 0;
     int ok = 0;
-    if (CALL(F_SER_SIZE, ssz_serialize_size(t->desc, value, scr, &need)) != 0) *why = "serialize_size status";
+    if (CALL(F_SER_SIZE, ssz_serialize_size, t->desc, value, scr, &need) != 0) *why = "serialize_size status";
     else if (need != 24 + len) *why = "serialize_size value";
     else {
         uint8_t *out = buffer(need);
         wr64(out, need);
         uint8_t got[32 + GUARD];
         memset(got, FILL, sizeof got);
-        if (CALL(F_SER, ssz_serialize(t->desc, value, scr, out)) != 0) *why = "serialize status";
+        if (CALL(F_SER, ssz_serialize, t->desc, value, scr, out) != 0) *why = "serialize status";
         else if (rd64(out + 8) != 24 || rd64(out + 16) != len || memcmp(out + 24, enc, (size_t)len))
             *why = "serialize bytes";
         else if (!guard_ok(out, need)) *why = "serialize wrote out of bounds";
-        else if (CALL(F_ROOT, ssz_hash_tree_root(t->desc, value, scr, got)) != 0) *why = "hash_tree_root status";
+        else if (CALL(F_ROOT, ssz_hash_tree_root, t->desc, value, scr, got) != 0) *why = "hash_tree_root status";
         else if (memcmp(got, root, 32)) *why = "hash_tree_root value";
         else if (!guard_ok(got, 32)) *why = "hash_tree_root wrote past root";
         else if (!guard_ok(scr, t->scratch_size)) *why = "wrote past scratch";
@@ -234,9 +239,9 @@ static int run_reject(const type_t *t, const uint8_t *enc, uint64_t len, uint64_
     if (t->ssz_size == 0) wr64(value, vsize);
     uint64_t size = 0, st;
     int ok = 0;
-    if ((st = CALL(F_DE_SIZE, ssz_deserialize_size(t->desc, ser, scr, &size))) != want)
+    if ((st = CALL(F_DE_SIZE, ssz_deserialize_size, t->desc, ser, scr, &size)) != want)
         *why = status_differs("deserialize_size", st, want);
-    else if ((st = CALL(F_DE, ssz_deserialize(t->desc, ser, scr, value))) != want)
+    else if ((st = CALL(F_DE, ssz_deserialize, t->desc, ser, scr, value)) != want)
         *why = status_differs("deserialize", st, want);
     else if (!guard_ok(value, vsize) || !guard_ok(scr, t->scratch_size) || !guard_ok(ser, ssize))
         *why = "out of bounds write";
@@ -258,7 +263,7 @@ static int run_proof(const type_t *t, const uint8_t *enc, uint64_t len, uint64_t
     wr64(out, bsize);
     uint64_t g = gindex;
     int ok = 0;
-    if (CALL(F_PROOF, ssz_build_proof(t->desc, value, &g, scr, out)) != 0) *why = "build_proof status";
+    if (CALL(F_PROOF, ssz_build_proof, t->desc, value, &g, scr, out) != 0) *why = "build_proof status";
     else if (rd64(out + 8) != 24 || rd64(out + 16) != nodes) *why = "build_proof count";
     else if (memcmp(out + 24, branch, (size_t)(32 * nodes))) *why = "build_proof nodes";
     else if (!guard_ok(out, bsize) || !guard_ok(scr, t->scratch_size)) *why = "out of bounds write";
@@ -282,7 +287,7 @@ static int run_proof_outcome(const type_t *t, const uint8_t *enc, uint64_t len, 
     wr64(out, bsize);
     uint64_t g = gindex;
     int ok = 0;
-    uint64_t st = CALL(F_PROOF, ssz_build_proof(t->desc, value, &g, scr, out));
+    uint64_t st = CALL(F_PROOF, ssz_build_proof, t->desc, value, &g, scr, out);
     if (st != want_status) *why = status_differs("build_proof", st, want_status);
     else if (st == 0 && (rd64(out + 8) != 24 || rd64(out + 16) != nodes)) *why = "build_proof count";
     else if (st == 0 && memcmp(out + 24, branch, (size_t)(32 * nodes))) *why = "build_proof nodes";
@@ -305,7 +310,7 @@ static int run_gindex(const type_t *t, const uint8_t *steps, uint64_t count, uin
     uint8_t got[8 + GUARD];
     memset(got, FILL, sizeof got);
     int ok = 0;
-    uint64_t st = CALL(F_GINDEX, ssz_get_generalized_index(t->desc, path, got));
+    uint64_t st = CALL(F_GINDEX, ssz_get_generalized_index, t->desc, path, got);
     if (st != want_status) *why = status_differs("get_generalized_index", st, want_status);
     else if (st == 0 && rd64(got) != expected) *why = "get_generalized_index value";
     else if (!guard_ok(got, 8)) *why = "out of bounds write";
@@ -327,7 +332,7 @@ static int run_verify(const uint8_t *leaf, uint64_t gindex, const uint8_t *root,
     wr64(branch + 16, count);
     memcpy(branch + 24, nodes, (size_t)(32 * count));
     int ok = 0;
-    uint64_t st = CALL(F_VERIFY, ssz_verify_merkle_proof(l, branch, g, r, valid));
+    uint64_t st = CALL(F_VERIFY, ssz_verify_merkle_proof, l, branch, g, r, valid);
     if (st != want_status) *why = status_differs("verify_merkle_proof", st, want_status);
     else if (st == 0 && rd64(valid) != want_valid) *why = "verify_merkle_proof valid";
     else if (!guard_ok(valid, 8)) *why = "out of bounds write";
@@ -469,7 +474,16 @@ int main(int argc, char **argv) {
         failed |= over;
         if (over) fn_failed_files[fn]++;
     }
-    /* One verdict for each function: every file that tests it passed, within the stack cap. */
+    for (int fn = 0; fn < F_COUNT; fn++) {
+        if (!stack_calls[fn]) continue;
+        if (abi_fault[fn])
+            printf("FAIL abi %s: kept state changed, mask 0x%016llx\n", fn_name[fn], (unsigned long long)abi_fault[fn]);
+        else
+            printf("PASS abi %s: kept registers, stack pointer and flags\n", fn_name[fn]);
+        failed |= abi_fault[fn] != 0;
+        if (abi_fault[fn]) fn_failed_files[fn]++;
+    }
+    /* One verdict for each function: every file that tests it passed, within the stack cap and the ABI. */
     for (int fn = 0; fn < F_COUNT; fn++)
         printf("FUNCTION %s %s\n", fn_name[fn], fn_files[fn] && !fn_failed_files[fn] ? "PASS" : "FAIL");
     return failed;

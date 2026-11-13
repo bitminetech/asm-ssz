@@ -24,6 +24,6 @@ clang --target=$target $march -I"$crypto/include" -I"$crypto/platform/windows" \
     -c "$crypto/asm/core/$isa/sha256.s" -o "$out/sha256.o"
 
 /opt/llvm-mingw/bin/$mingw-clang $march -std=c11 -O2 -Wall -Wextra -Werror -static \
-    "$root/tests/runner/runner.c" "$out/libasm-ssz.a" "$out/sha256.o" -o "$out/runner.exe"
+    "$root/tests/runner/runner.c" -I"$root/platform/windows" "$root/tests/runner/abi_$isa.s" "$out/libasm-ssz.a" "$out/sha256.o" -o "$out/runner.exe"
 /opt/llvm-mingw/bin/$mingw-clang $march -std=c11 -O2 -Wall -Wextra -Werror -static \
     "$root/bench/bench.c" "$out/libasm-ssz.a" "$out/sha256.o" -ladvapi32 -o "$out/bench.exe"
