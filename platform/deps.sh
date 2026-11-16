@@ -4,7 +4,7 @@
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 crypto=$root/build/deps/asm-crypto
-commit=de79f5bc895ebca6c74ae6dfd86e409a234e07bf    # asm-crypto, README Dependencies
+commit=70753eea4f8a4e937b706d9308828c7ff3a14b40    # asm-crypto, README Dependencies
 if [ "$(git -C "$crypto" rev-parse HEAD 2>/dev/null)" != "$commit" ]; then
     rm -rf "$crypto"
     git init -q "$crypto"
