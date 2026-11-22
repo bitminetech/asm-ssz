@@ -25,7 +25,7 @@ Standard: [asm-standard@2a19d3f](https://github.com/bitminetech/asm-standard/blo
 
 | Repo | Commit | Functions used |
 |---|---|---|
-| [asm-crypto](https://github.com/bitminetech/asm-crypto) | [`745aaf5`](https://github.com/bitminetech/asm-crypto/tree/745aaf5954c57bb65289f474326d5c566e4d653e) | `crypto_sha256` |
+| [asm-crypto](https://github.com/bitminetech/asm-crypto) | [`0f80dd7`](https://github.com/bitminetech/asm-crypto/tree/0f80dd746dfa7a561610165065b9473e4d16a0ce) | `crypto_sha256` |
 
 ## Build tools
 
