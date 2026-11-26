@@ -1,5 +1,7 @@
 # Serialization
 
+SSZ types, encode and decode.
+
 ## Contents
 
 ### Functions

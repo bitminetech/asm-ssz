@@ -1,5 +1,7 @@
 # Merkleization
 
+Hash tree roots of SSZ values.
+
 ## Contents
 
 ### Functions

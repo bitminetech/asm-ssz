@@ -24,7 +24,7 @@ CHUNK = 32
 UINT_WIDTHS = (1, 4, 8, 32)  # Uint8, Uint32, Uint64, Uint256: the widths the live forks use
 LEVEL_SIZE = 96              # SSZ_LEVEL_SIZE
 SCRATCH_WORK = 256           # SSZ_SCR_WORK: the root level's work area starts here
-MAX_LEVELS = 12              # nested types; this bounds the stack (README)
+MAX_LEVELS = 12              # nested types; this bounds the stack (STACK_CAP, tests/runner/runner.c)
 
 
 def ceil_div(a, b):

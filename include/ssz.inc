@@ -198,5 +198,5 @@
  * - ssz_build_proof: ssz_value_level, ssz_child_level, ssz_subtree_root.
  * - ssz_level_root: ssz_subtree_root, ssz_hash_pair. ssz_subtree_root: ssz_level_leaf, ssz_hash_pair.
  * - ssz_level_leaf: ssz_child_level, ssz_level_root. ssz_child_level: ssz_value_level.
- * - ssz_hash_pair, ssz_verify_merkle_proof: crypto_sha256 from asm-crypto (README, Dependencies).
+ * - ssz_hash_pair, ssz_verify_merkle_proof: crypto_sha256 from asm-crypto (platform/deps.sh).
  */

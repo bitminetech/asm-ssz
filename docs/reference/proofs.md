@@ -1,5 +1,7 @@
 # Generalized indices and proofs
 
+Merkle proofs of tree nodes.
+
 ## Contents
 
 ### Functions
